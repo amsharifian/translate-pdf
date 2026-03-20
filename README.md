@@ -33,6 +33,21 @@ translate-pdf -i "./docs/*.pdf" \\
   --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
 ```
 
+## YAML Config
+
+Defaults are loaded from `config.yml` (override with `--config`).
+
+Example `config.yml`:
+
+```yaml
+openai:
+  api_key: "your-openai-api-key"
+  model: "gpt-4o-mini"
+  base_url: "https://api.openai.com/v1"
+font:
+  default_path: "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
+```
+
 ## Font
 
 You must supply a TTF/OTF font that supports Persian/Farsi (e.g., Noto Naskh Arabic, Vazirmatn, or IRANSans).

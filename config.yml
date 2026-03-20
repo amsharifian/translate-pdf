@@ -1,0 +1,6 @@
+openai:
+  api_key: ""
+  model: "gpt-4o-mini"
+  base_url: "https://api.openai.com/v1"
+font:
+  default_path: "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"

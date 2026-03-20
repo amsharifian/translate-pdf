@@ -8,6 +8,7 @@ from translator.pdf_io import discover_pdfs
 from translator.render import translate_pdf_preserve_layout
 from translator.translate import load_translator_config, translate_texts
 from translator.font_utils import resolve_font_path
+from translator.config import load_config, get_openai_config, get_default_font_path
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -44,6 +45,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="OpenAI model override (defaults to OPENAI_MODEL or gpt-4o-mini)",
     )
     parser.add_argument(
+        "--config",
+        default="config.yml",
+        help="Path to YAML config (default: config.yml)",
+    )
+    parser.add_argument(
         "--openai-api-key",
         default=None,
         help="OpenAI API key (overrides OPENAI_API_KEY)",
@@ -55,7 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--font",
-        required=True,
+        required=False,
         help="Font path or installed font name that supports Farsi",
     )
     parser.add_argument(
@@ -78,11 +84,15 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    cfg = load_config(args.config)
+    openai_cfg = get_openai_config(cfg)
+    default_font = get_default_font_path(cfg)
+
     config = load_translator_config(
         args.provider,
-        args.model,
-        api_key_override=args.openai_api_key,
-        base_url_override=args.openai_base_url,
+        args.model or openai_cfg.get("model"),
+        api_key_override=args.openai_api_key or openai_cfg.get("api_key"),
+        base_url_override=args.openai_base_url or openai_cfg.get("base_url"),
     )
     if args.provider == "openai" and not config.api_key:
         print(
@@ -90,10 +100,11 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    font_path = resolve_font_path(args.font)
+    font_arg = args.font or default_font
+    font_path = resolve_font_path(font_arg) if font_arg else None
     if not font_path:
         print(
-            "Font not found. Provide a valid TTF/OTF path or an installed font name.",
+            "Font not found. Provide --font or set font.default_path in config.yml.",
             file=sys.stderr,
         )
         return 2

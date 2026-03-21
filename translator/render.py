@@ -50,23 +50,35 @@ def _bisect_font_size(
     min_size: float,
     max_size: float,
 ) -> tuple[float, int]:
-    """Binary‑search for the largest font size that fits *rect*. Returns (size, rc)."""
+    """Binary-search for the largest font size that fits *rect*. Returns (size, rc).
+
+    Uses a temporary scratch page for probing so no text is written to the real page.
+    """
+    # Create a scratch page with the same dimensions for probing
+    scratch_doc = fitz.open()
+    scratch_page = scratch_doc.new_page(width=page.rect.width, height=page.rect.height)
+
     lo, hi = min_size, max_size
     best_size, best_rc = lo, -1
     while hi - lo > 0.5:
         mid = (lo + hi) / 2
-        rc = page.insert_textbox(
+        # Probe on scratch page (we recreate it each time to avoid accumulation)
+        test_doc = fitz.open()
+        test_page = test_doc.new_page(width=page.rect.width, height=page.rect.height)
+        rc = test_page.insert_textbox(
             rect, shaped,
             fontname=font_name, fontfile=font_file,
             fontsize=mid, color=(0, 0, 0),
             align=fitz.TEXT_ALIGN_RIGHT,
-            overlay=False,
         )
+        test_doc.close()
         if rc is not None and rc >= 0:
             best_size, best_rc = mid, rc
             lo = mid
         else:
             hi = mid
+
+    scratch_doc.close()
     return best_size, best_rc
 
 

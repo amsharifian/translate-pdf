@@ -224,127 +224,215 @@ def main() -> None:
 
     # ── Sidebar ─────────────────────────────────────────────────
     with st.sidebar:
-        st.header("⚙️ Settings")
 
-        mode = st.radio("Translation mode", ["OpenAI API", "Local (Ollama)"], index=1)
+        # ── Settings ────────────────────────────────────────────
+        with st.expander("⚙️ Settings", expanded=True):
+            mode = st.radio("Translation mode", ["OpenAI API", "Local (Ollama)"], index=1)
 
-        if mode == "OpenAI API":
-            provider = "openai"
-            model = st.text_input("Model", value=openai_cfg.get("model") or "gpt-4o-mini")
-            api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
-            base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
-        else:
-            provider = "ollama"
-            model = st.text_input("Model", value=local_cfg.get("model") or "qwen3:8b")
-            api_key = st.text_input("API Key (optional)", value=local_cfg.get("api_key") or "ollama")
-            base_url = st.text_input("Base URL", value=local_cfg.get("base_url") or "http://localhost:11434/v1")
-
-        if api_key:
-            masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else api_key
-            st.caption(f"Using API key: {masked}")
-
-        st.markdown("---")
-        st.header("🔤 Font")
-        font_choice = st.selectbox("Font", list(BUNDLED_FONTS.keys()))
-        custom_font = st.file_uploader("Or upload a TTF/OTF font", type=["ttf", "otf", "ttc"])
-
-        st.markdown("---")
-        st.header("🌐 Language")
-        lang_name = st.selectbox("Target language", list(SUPPORTED_LANGUAGES.keys()), index=0)
-        target_lang = SUPPORTED_LANGUAGES[lang_name]
-
-        st.markdown("---")
-        st.header("🔧 Worker")
-        worker_alive = _is_worker_running()
-        if worker_alive:
-            st.success("Worker is running", icon="✅")
-        else:
-            st.warning("Worker is not running", icon="⚠️")
-        if st.button(
-            "🔄 Restart Worker" if worker_alive else "▶ Start Worker",
-            use_container_width=True,
-        ):
-            # Kill existing worker if running
-            if worker_alive and WORKER_PID_FILE.exists():
-                import os, signal
-                try:
-                    pid = int(WORKER_PID_FILE.read_text().strip())
-                    os.kill(pid, signal.SIGTERM)
-                except (ValueError, OSError):
-                    pass
-                WORKER_PID_FILE.unlink(missing_ok=True)
-            if _start_worker():
-                st.toast("Worker started!", icon="✅")
-                st.rerun()
+            if mode == "OpenAI API":
+                provider = "openai"
+                model = st.text_input("Model", value=openai_cfg.get("model") or "gpt-4o-mini")
+                api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
+                base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
             else:
-                st.error("Could not start worker.")
+                provider = "ollama"
+                model = st.text_input("Model", value=local_cfg.get("model") or "qwen3:8b")
+                api_key = st.text_input("API Key (optional)", value=local_cfg.get("api_key") or "ollama")
+                base_url = st.text_input("Base URL", value=local_cfg.get("base_url") or "http://localhost:11434/v1")
 
-        if st.button("💾 Save Settings", use_container_width=True, help="Persist current model/URL to config.yml"):
-            _save_settings(cfg_path, provider, model, base_url, api_key)
-            st.toast("Settings saved to config.yml", icon="💾")
+            if api_key:
+                masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else api_key
+                st.caption(f"Using API key: {masked}")
 
-        st.markdown("---")
-        st.header("📖 Global Glossary")
-        st.caption("These terms are automatically included in every job.")
-        global_glossary = _load_global_glossary()
-        global_glossary_text = st.text_area(
-            "Global glossary (term=translation, one per line)",
-            value="\n".join(f"{k}={v}" for k, v in global_glossary.items()),
-            height=150,
-            key="global_glossary_editor",
-        )
-        if st.button("💾 Save Glossary", use_container_width=True):
-            new_glossary: dict[str, str] = {}
-            for line in global_glossary_text.strip().splitlines():
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    k, v = k.strip(), v.strip()
-                    if k and v:
-                        new_glossary[k] = v
-            _save_global_glossary(new_glossary)
-            st.toast(f"Global glossary saved — {len(new_glossary)} term(s)", icon="📖")
-        if global_glossary:
-            st.caption(f"{len(global_glossary)} term(s) active")
+            if st.button("💾 Save Settings", use_container_width=True, help="Persist current model/URL to config.yml"):
+                _save_settings(cfg_path, provider, model, base_url, api_key)
+                st.toast("Settings saved to config.yml", icon="💾")
 
-        st.markdown("---")
-        st.header("🧠 Translation Memory")
-        tm = TranslationMemory(TM_PATH)
-        tm_count = tm.count()
-        st.caption(f"{tm_count} sentence pair(s) stored")
-        if tm_count > 0:
-            with st.expander("Browse / manage entries"):
+        # ── Font ────────────────────────────────────────────────
+        with st.expander("🔤 Font", expanded=False):
+            font_choice = st.selectbox("Font", list(BUNDLED_FONTS.keys()))
+            custom_font = st.file_uploader("Or upload a TTF/OTF font", type=["ttf", "otf", "ttc"])
+
+        # ── Language ────────────────────────────────────────────
+        with st.expander("🌐 Language", expanded=False):
+            lang_name = st.selectbox("Target language", list(SUPPORTED_LANGUAGES.keys()), index=0)
+            target_lang = SUPPORTED_LANGUAGES[lang_name]
+
+        # ── Worker ──────────────────────────────────────────────
+        with st.expander("🔧 Worker", expanded=False):
+            worker_alive = _is_worker_running()
+            if worker_alive:
+                st.success("Worker is running", icon="✅")
+            else:
+                st.warning("Worker is not running", icon="⚠️")
+            if st.button(
+                "🔄 Restart Worker" if worker_alive else "▶ Start Worker",
+                use_container_width=True,
+            ):
+                if worker_alive and WORKER_PID_FILE.exists():
+                    import os, signal
+                    try:
+                        pid = int(WORKER_PID_FILE.read_text().strip())
+                        os.kill(pid, signal.SIGTERM)
+                    except (ValueError, OSError):
+                        pass
+                    WORKER_PID_FILE.unlink(missing_ok=True)
+                if _start_worker():
+                    st.toast("Worker started!", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("Could not start worker.")
+
+        # ── Global Glossary ─────────────────────────────────────
+        with st.expander("📖 Global Glossary", expanded=False):
+            st.caption("These terms are automatically included in every job.")
+            global_glossary = _load_global_glossary()
+            global_glossary_text = st.text_area(
+                "Global glossary (term=translation, one per line)",
+                value="\n".join(f"{k}={v}" for k, v in global_glossary.items()),
+                height=150,
+                key="global_glossary_editor",
+            )
+            if st.button("💾 Save Glossary", use_container_width=True):
+                new_glossary: dict[str, str] = {}
+                for line in global_glossary_text.strip().splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip()
+                        if k and v:
+                            new_glossary[k] = v
+                _save_global_glossary(new_glossary)
+                st.toast(f"Global glossary saved — {len(new_glossary)} term(s)", icon="📖")
+            if global_glossary:
+                st.caption(f"{len(global_glossary)} term(s) active")
+
+        # ── Translation Memory ──────────────────────────────────
+        with st.expander("🧠 Translation Memory", expanded=False):
+            tm = TranslationMemory(TM_PATH)
+            tm_count = tm.count()
+            st.caption(f"{tm_count} sentence pair(s) stored")
+
+            # ── Add / edit entries ──
+            st.markdown("**Add a new entry**")
+            tm_new_source = st.text_area(
+                "Source text (original)",
+                placeholder="The algorithm converges after 100 iterations.",
+                height=80,
+                key="tm-new-source",
+            )
+            tm_new_target = st.text_area(
+                "Target text (preferred translation)",
+                placeholder="الگوریتم پس از ۱۰۰ تکرار همگرا می‌شود.",
+                height=80,
+                key="tm-new-target",
+            )
+            tm_add_cols = st.columns([3, 2])
+            with tm_add_cols[0]:
+                tm_new_lang = st.selectbox(
+                    "Language",
+                    list(SUPPORTED_LANGUAGES.values()),
+                    index=0,
+                    key="tm-new-lang",
+                    format_func=lambda code: next(
+                        (name for name, c in SUPPORTED_LANGUAGES.items() if c == code), code
+                    ),
+                )
+            with tm_add_cols[1]:
+                tm_new_tags = st.text_input(
+                    "Tags (comma-separated)",
+                    placeholder="legal, formal",
+                    key="tm-new-tags",
+                )
+            if st.button("➕ Add to Translation Memory", use_container_width=True, key="tm-add-btn"):
+                src = tm_new_source.strip()
+                tgt = tm_new_target.strip()
+                if src and tgt:
+                    tags = [t.strip() for t in tm_new_tags.split(",") if t.strip()] if tm_new_tags else []
+                    tm.add(TMEntry(
+                        source=src,
+                        target=tgt,
+                        target_lang=tm_new_lang,
+                        tags=tags,
+                    ))
+                    st.toast("Entry added to TM!", icon="✅")
+                    st.rerun()
+                else:
+                    st.warning("Both source and target text are required.")
+
+            # ── Browse existing entries ──
+            if tm_count > 0:
+                st.markdown("---")
+                st.markdown(f"**Existing entries** ({tm_count})")
                 entries = tm.load_all()
                 for i, entry in enumerate(entries):
-                    cols = st.columns([5, 1])
-                    with cols[0]:
-                        st.markdown(f"**EN:** {entry.source[:120]}")
-                        st.markdown(f"**→** {entry.target[:120]}")
-                        st.caption(f"Lang: {entry.target_lang} · {entry.created_at[:10]}")
-                    with cols[1]:
-                        if st.button("🗑", key=f"tm-del-{i}", help="Delete this entry"):
-                            tm.delete(i)
-                            st.toast("Entry deleted", icon="🗑")
-                            st.rerun()
-            col_exp, col_imp, col_clr = st.columns(3)
-            with col_exp:
-                st.download_button(
-                    "📥 Export TM",
-                    data=tm.export_json(),
-                    file_name="translation_memory.json",
-                    mime="application/json",
-                    key="tm-export",
-                    use_container_width=True,
-                )
-            with col_clr:
-                if st.button("🗑 Clear TM", key="tm-clear", use_container_width=True):
-                    tm.clear()
-                    st.toast("Translation memory cleared", icon="🗑")
-                    st.rerun()
-        tm_upload = st.file_uploader("Import TM (JSON)", type=["json"], key="tm-import-file")
-        if tm_upload is not None:
-            imported = tm.import_json(tm_upload.read().decode("utf-8"))
-            st.toast(f"Imported {imported} entries", icon="📥")
-            st.rerun()
+                    with st.container(border=True):
+                        st.markdown(f"**Source:** {entry.source[:200]}")
+                        st.markdown(f"**→ {entry.target_lang.upper()}:** {entry.target[:200]}")
+                        meta = f"{entry.created_at[:10]}"
+                        if entry.tags:
+                            meta += f" · {', '.join(entry.tags)}"
+                        if entry.source_job:
+                            meta += f" · job: {entry.source_job[:8]}…"
+                        st.caption(meta)
+
+                        edit_col, del_col = st.columns(2)
+                        with edit_col:
+                            if st.button("✏️ Edit", key=f"tm-edit-{i}", use_container_width=True):
+                                st.session_state[f"tm-editing-{i}"] = True
+                        with del_col:
+                            if st.button("🗑 Delete", key=f"tm-del-{i}", use_container_width=True):
+                                tm.delete(i)
+                                st.toast("Entry deleted", icon="🗑")
+                                st.rerun()
+
+                        # Inline edit form
+                        if st.session_state.get(f"tm-editing-{i}"):
+                            ed_src = st.text_area("Source", value=entry.source, key=f"tm-ed-src-{i}", height=70)
+                            ed_tgt = st.text_area("Target", value=entry.target, key=f"tm-ed-tgt-{i}", height=70)
+                            ed_tags = st.text_input("Tags", value=", ".join(entry.tags), key=f"tm-ed-tags-{i}")
+                            save_c, cancel_c = st.columns(2)
+                            with save_c:
+                                if st.button("💾 Save", key=f"tm-ed-save-{i}", use_container_width=True):
+                                    updated = TMEntry(
+                                        source=ed_src.strip(),
+                                        target=ed_tgt.strip(),
+                                        target_lang=entry.target_lang,
+                                        context=entry.context,
+                                        created_at=entry.created_at,
+                                        source_job=entry.source_job,
+                                        tags=[t.strip() for t in ed_tags.split(",") if t.strip()],
+                                    )
+                                    tm.update(i, updated)
+                                    st.session_state.pop(f"tm-editing-{i}", None)
+                                    st.toast("Entry updated!", icon="💾")
+                                    st.rerun()
+                            with cancel_c:
+                                if st.button("Cancel", key=f"tm-ed-cancel-{i}", use_container_width=True):
+                                    st.session_state.pop(f"tm-editing-{i}", None)
+                                    st.rerun()
+
+                # ── Export / Import / Clear ──
+                st.markdown("---")
+                exp_col, clr_col = st.columns(2)
+                with exp_col:
+                    st.download_button(
+                        "📥 Export",
+                        data=tm.export_json(),
+                        file_name="translation_memory.json",
+                        mime="application/json",
+                        key="tm-export",
+                        use_container_width=True,
+                    )
+                with clr_col:
+                    if st.button("🗑 Clear all", key="tm-clear", use_container_width=True):
+                        tm.clear()
+                        st.toast("Translation memory cleared", icon="🗑")
+                        st.rerun()
+            tm_upload = st.file_uploader("Import TM (JSON)", type=["json"], key="tm-import-file")
+            if tm_upload is not None:
+                imported = tm.import_json(tm_upload.read().decode("utf-8"))
+                st.toast(f"Imported {imported} entries", icon="📥")
+                st.rerun()
 
     # ── Upload area ─────────────────────────────────────────────
     st.markdown(

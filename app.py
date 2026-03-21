@@ -395,6 +395,12 @@ def main() -> None:
                 placeholder="https://hooks.slack.com/...",
                 help="POST a JSON payload to this URL when the job finishes.",
             )
+        custom_prompt = st.text_area(
+            "Custom prompt (optional)",
+            placeholder="e.g. Use formal tone. This is a legal document. Keep brand names in English.",
+            height=100,
+            help="Extra instructions appended to the system prompt for this job. Use this to guide the AI's style, tone, or domain-specific behavior.",
+        )
 
     # ── Preview ─────────────────────────────────────────────────
     if uploaded:
@@ -507,6 +513,7 @@ def main() -> None:
             "page_range": list(sorted(_parse_page_range(page_range_str, 9999) or [])) or None,
             "side_by_side": side_by_side,
             "webhook_url": webhook_url.strip() or None,
+            "custom_prompt": custom_prompt.strip(),
         }
         create_job(job)
         _ensure_worker()

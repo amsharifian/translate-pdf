@@ -29,6 +29,7 @@ class TranslatorConfig:
     target_lang: str = "fa"
     glossary: dict[str, str] = field(default_factory=dict)
     translation_memory: TranslationMemory | None = None
+    custom_prompt: str = ""
 
 
 def _chunk_text(text: str, max_chars: int = 4000) -> List[str]:
@@ -106,11 +107,14 @@ def _build_system_prompt(
     target_lang: str,
     glossary: dict[str, str],
     tm_examples: list[tuple] | None = None,
+    custom_prompt: str = "",
 ) -> str:
     prompt = (
         "You are a professional translator. Translate the user's text to "
         f"{target_lang}. Preserve line breaks and do not add commentary."
     )
+    if custom_prompt:
+        prompt += f"\n\nAdditional instructions from the user:\n{custom_prompt}"
     if glossary:
         entries = "\n".join(f"  {k} → {v}" for k, v in glossary.items())
         prompt += f"\n\nAlways use these term translations:\n{entries}"
@@ -139,7 +143,7 @@ def translate_texts(texts: Iterable[str], target_lang: str, config: TranslatorCo
             tm_examples = None
             if tm is not None:
                 tm_examples = tm.search(chunk, target_lang) or None
-            system_prompt = _build_system_prompt(target_lang, config.glossary, tm_examples)
+            system_prompt = _build_system_prompt(target_lang, config.glossary, tm_examples, config.custom_prompt)
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": chunk},

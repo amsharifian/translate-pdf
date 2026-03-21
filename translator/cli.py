@@ -117,6 +117,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to translation memory JSONL file (default: jobs/translation_memory.jsonl)",
     )
+    parser.add_argument(
+        "--prompt",
+        default=None,
+        help="Custom instructions appended to the system prompt (e.g. 'Use formal tone')",
+    )
     return parser
 
 
@@ -181,6 +186,8 @@ def main() -> int:
                     k, v = line.split("=", 1)
                     glossary[k.strip()] = v.strip()
     config.glossary = glossary
+    if args.prompt:
+        config.custom_prompt = args.prompt
 
     # Load translation memory
     if args.tm_path:

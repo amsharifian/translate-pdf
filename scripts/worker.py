@@ -92,6 +92,7 @@ def main() -> None:
                 base_url_override=job.get("base_url"),
             )
             config.glossary = glossary
+            config.custom_prompt = job.get("custom_prompt") or ""
             config.translation_memory = TranslationMemory()
 
             for in_path in input_files:

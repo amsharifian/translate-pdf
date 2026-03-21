@@ -1,5 +1,5 @@
 [project]
-name = "translator"
+name = "stormlight-translate"
 version = "0.1.0"
 description = "Translate PDFs to Farsi and save as PDFs"
 readme = "README.md"
@@ -14,6 +14,7 @@ dependencies = [
   "python-bidi>=0.4.2",
   "pyyaml>=6.0.0",
   "tqdm>=4.66.0",
+  "streamlit>=1.36.0",
 ]
 
 [project.scripts]

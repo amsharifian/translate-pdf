@@ -1,13 +1,23 @@
-# PDF to Farsi Translator
+# Stormlight Translate (PDF to Farsi)
 
 A small Python CLI that selects PDFs via an input switch, translates them to Farsi, and saves new PDFs.
 
-## Setup
+## Quick Setup
+
+**macOS / Linux**
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python3 -m pip install -r requirements.txt
+```
+
+**Windows (PowerShell)**
+
+```powershell
+py -m venv .venv
+.\\.venv\\Scripts\\Activate.ps1
+py -m pip install -r requirements.txt
 ```
 
 ## Translation Provider
@@ -128,6 +138,42 @@ translate-pdf -i "./docs/*.pdf" --provider dummy --font /path/to/font.ttf
 translate-pdf -i "./docs/*.pdf" --model gpt-4o-mini --font /path/to/font.ttf
 translate-pdf -i "./docs/*.pdf" --provider ollama --model qwen3:8b --font /path/to/font.ttf
 ```
+
+## Web App (Streamlit)
+
+A simple web app is included for non-terminal users. It works on macOS and Windows.
+
+### Install Streamlit
+
+**macOS / Linux**
+
+```bash
+python3 -m pip install streamlit
+```
+
+**Windows**
+
+```bash
+py -m pip install streamlit
+```
+
+Run it locally:
+
+```bash
+streamlit run app.py
+```
+
+On Windows if `streamlit` is not on PATH:
+
+```bash
+py -m streamlit run app.py
+```
+
+The web app supports:
+- OpenAI API mode (enter your API key)
+- Local Ollama mode (no key required)
+- Dummy mode for testing
+- Upload PDF(s), pick a bundled font, and download translated PDFs
 
 ## Notes
 

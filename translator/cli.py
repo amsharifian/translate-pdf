@@ -38,7 +38,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provider",
         default="openai",
-        choices=["openai", "ollama", "dummy"],
+        choices=["openai", "ollama"],
         help="Translation provider",
     )
     parser.add_argument(

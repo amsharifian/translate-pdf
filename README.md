@@ -121,6 +121,9 @@ translate-pdf -i doc.pdf --side-by-side --font Vazirmatn
 # Use a glossary file (one "term=translation" per line)
 translate-pdf -i doc.pdf --glossary terms.txt --font Vazirmatn
 
+# Use a translation memory file for sentence-level context
+translate-pdf -i doc.pdf --tm-path jobs/translation_memory.jsonl --font Vazirmatn
+
 # Target a different language (default: fa)
 translate-pdf -i doc.pdf --lang ar --font Vazirmatn
 ```
@@ -140,6 +143,7 @@ translate-pdf -i doc.pdf --lang ar --font Vazirmatn
 | `--glossary` | Glossary file path |
 | `--pages` | Page range (e.g. `1-5,10`) |
 | `--side-by-side` | Interleave original + translated pages |
+| `--tm-path` | Translation memory JSONL file path |
 | `--force` | Overwrite existing outputs |
 | `--verbose` | Print progress |
 | `--debug-draw` | Draw debug markers on output |
@@ -174,6 +178,7 @@ streamlit run app.py
 - **Settings persistence** — Provider, model, base URL, and API key are remembered across sessions
 - **Dark mode** — Fully styled for both light and dark Streamlit themes
 - **API key encryption** — Keys are encrypted at rest using Fernet symmetric encryption (`jobs/.key`)
+- **Translation Memory** — Review AI translations, save corrections, and have future translations learn from your feedback (sentence/paragraph-level few-shot examples via TF-IDF retrieval)
 
 ### Background Worker
 
@@ -207,6 +212,26 @@ Example `jobs/glossary.json`:
 }
 ```
 
+## Translation Memory
+
+Translation Memory (TM) is a sentence/paragraph-level feedback system. After a job completes, open the **"Review translations"** panel on the job card to see every translated block. You can:
+
+- **Accept** the AI translation as a positive example
+- **Correct** the translation and save your version
+- **Skip** blocks that don't need feedback
+
+Saved pairs are stored in `jobs/translation_memory.jsonl`. On future translations, the system finds the most similar stored examples using TF-IDF cosine similarity and injects them as few-shot examples in the LLM prompt — teaching the AI your preferred style and phrasing.
+
+Manage TM from the sidebar: browse entries, delete, export/import, or clear.
+
+CLI usage:
+
+```bash
+translate-pdf -i doc.pdf --tm-path jobs/translation_memory.jsonl --font Vazirmatn
+```
+
+If `jobs/translation_memory.jsonl` exists, the CLI loads it automatically.
+
 ## Architecture
 
 ```
@@ -218,7 +243,8 @@ translator/
 ├── job_queue.py    # SQLite-backed job CRUD
 ├── pdf_io.py       # PDF file discovery
 ├── render.py       # Core PDF → translate → render pipeline
-└── translate.py    # LLM translation with retry & chunking
+├── translate.py    # LLM translation with retry & chunking
+└── translation_memory.py  # Sentence-level TM with TF-IDF search
 
 scripts/
 ├── worker.py       # Background job processor
@@ -235,6 +261,7 @@ config.yml          # Default configuration
 - **Exponential backoff retry** — LLM calls retry up to 5 times with 1s/2s/4s/8s/16s delays on transient errors
 - **Sentence-boundary chunking** — Long text blocks are split on sentence boundaries before translation
 - **Page-level resume** — Translation progress is logged to `.log.jsonl` files, allowing interrupted jobs to resume from the last completed page
+- **Translation Memory (TF-IDF)** — User-corrected translation pairs are stored in a JSONL file and the most relevant ones are injected as few-shot examples into the LLM prompt at translation time
 
 ## Notes
 

@@ -7,6 +7,7 @@ import sys
 from translator.pdf_io import discover_pdfs
 from translator.render import translate_pdf_preserve_layout
 from translator.translate import load_translator_config, translate_texts
+from translator.translation_memory import TranslationMemory
 from translator.font_utils import resolve_font_path
 from translator.config import load_config, get_openai_config, get_default_font_path, get_local_config
 from openai import OpenAIError, RateLimitError
@@ -111,6 +112,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Interleave original and translated pages in the output PDF",
     )
+    parser.add_argument(
+        "--tm-path",
+        default=None,
+        help="Path to translation memory JSONL file (default: jobs/translation_memory.jsonl)",
+    )
     return parser
 
 
@@ -175,6 +181,14 @@ def main() -> int:
                     k, v = line.split("=", 1)
                     glossary[k.strip()] = v.strip()
     config.glossary = glossary
+
+    # Load translation memory
+    if args.tm_path:
+        config.translation_memory = TranslationMemory(args.tm_path)
+    else:
+        tm_default = Path("jobs/translation_memory.jsonl")
+        if tm_default.exists():
+            config.translation_memory = TranslationMemory(tm_default)
 
     # Parse page range
     page_range_set = None

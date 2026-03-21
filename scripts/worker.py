@@ -17,6 +17,7 @@ from translator.job_queue import (
 )
 from translator.render import translate_pdf_preserve_layout
 from translator.translate import load_translator_config, translate_texts
+from translator.translation_memory import TranslationMemory
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ def main() -> None:
                 base_url_override=job.get("base_url"),
             )
             config.glossary = glossary
+            config.translation_memory = TranslationMemory()
 
             for in_path in input_files:
                 if get_job_status(job_id) == "cancelled":

@@ -4,11 +4,14 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Iterable, List
+from typing import Iterable, List, TYPE_CHECKING
 import os
 import textwrap
 
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from translator.translation_memory import TranslationMemory
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,7 @@ class TranslatorConfig:
     timeout_seconds: int = 60
     target_lang: str = "fa"
     glossary: dict[str, str] = field(default_factory=dict)
+    translation_memory: TranslationMemory | None = None
 
 
 def _chunk_text(text: str, max_chars: int = 4000) -> List[str]:
@@ -98,7 +102,11 @@ def _call_llm_with_retry(client: OpenAI, model: str, messages: list, timeout: in
     return ""  # unreachable
 
 
-def _build_system_prompt(target_lang: str, glossary: dict[str, str]) -> str:
+def _build_system_prompt(
+    target_lang: str,
+    glossary: dict[str, str],
+    tm_examples: list[tuple] | None = None,
+) -> str:
     prompt = (
         "You are a professional translator. Translate the user's text to "
         f"{target_lang}. Preserve line breaks and do not add commentary."
@@ -106,6 +114,10 @@ def _build_system_prompt(target_lang: str, glossary: dict[str, str]) -> str:
     if glossary:
         entries = "\n".join(f"  {k} → {v}" for k, v in glossary.items())
         prompt += f"\n\nAlways use these term translations:\n{entries}"
+    if tm_examples:
+        prompt += "\n\nHere are examples of preferred translations — match their style and phrasing:"
+        for i, (entry, _score) in enumerate(tm_examples, 1):
+            prompt += f"\n\nExample {i}:\nSource: \"{entry.source}\"\nTranslation: \"{entry.target}\""
     return prompt
 
 
@@ -117,12 +129,17 @@ def translate_texts(texts: Iterable[str], target_lang: str, config: TranslatorCo
         raise ValueError(f"Unknown provider: {config.provider}")
 
     client = OpenAI(api_key=config.api_key, base_url=config.base_url)
-    system_prompt = _build_system_prompt(target_lang, config.glossary)
+    tm = config.translation_memory
     results: List[str] = []
     for text in texts:
         chunks = _chunk_text(text)
         translated_chunks: List[str] = []
         for chunk in chunks:
+            # Query TM for relevant examples per chunk
+            tm_examples = None
+            if tm is not None:
+                tm_examples = tm.search(chunk, target_lang) or None
+            system_prompt = _build_system_prompt(target_lang, config.glossary, tm_examples)
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": chunk},

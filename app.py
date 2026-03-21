@@ -20,6 +20,7 @@ from translator.job_queue import (
     init_db, create_job, list_jobs, update_job_status, update_priority, delete_job,
 )
 from translator.render import extract_page_text_blocks
+from translator.translation_memory import TranslationMemory, TMEntry, DEFAULT_TM_PATH
 
 
 APP_TITLE = "Stormlight Translate"
@@ -66,6 +67,7 @@ STATUS_STYLE = {
 NOTIF_DB = Path("jobs/.notifications.json")
 GLOSSARY_PATH = Path("jobs/glossary.json")
 WORKER_PID_FILE = Path("jobs/.worker.pid")
+TM_PATH = DEFAULT_TM_PATH
 
 
 # ── Helpers ─────────────────────────────────────────────────────
@@ -303,6 +305,46 @@ def main() -> None:
             st.toast(f"Global glossary saved — {len(new_glossary)} term(s)", icon="📖")
         if global_glossary:
             st.caption(f"{len(global_glossary)} term(s) active")
+
+        st.markdown("---")
+        st.header("🧠 Translation Memory")
+        tm = TranslationMemory(TM_PATH)
+        tm_count = tm.count()
+        st.caption(f"{tm_count} sentence pair(s) stored")
+        if tm_count > 0:
+            with st.expander("Browse / manage entries"):
+                entries = tm.load_all()
+                for i, entry in enumerate(entries):
+                    cols = st.columns([5, 1])
+                    with cols[0]:
+                        st.markdown(f"**EN:** {entry.source[:120]}")
+                        st.markdown(f"**→** {entry.target[:120]}")
+                        st.caption(f"Lang: {entry.target_lang} · {entry.created_at[:10]}")
+                    with cols[1]:
+                        if st.button("🗑", key=f"tm-del-{i}", help="Delete this entry"):
+                            tm.delete(i)
+                            st.toast("Entry deleted", icon="🗑")
+                            st.rerun()
+            col_exp, col_imp, col_clr = st.columns(3)
+            with col_exp:
+                st.download_button(
+                    "📥 Export TM",
+                    data=tm.export_json(),
+                    file_name="translation_memory.json",
+                    mime="application/json",
+                    key="tm-export",
+                    use_container_width=True,
+                )
+            with col_clr:
+                if st.button("🗑 Clear TM", key="tm-clear", use_container_width=True):
+                    tm.clear()
+                    st.toast("Translation memory cleared", icon="🗑")
+                    st.rerun()
+        tm_upload = st.file_uploader("Import TM (JSON)", type=["json"], key="tm-import-file")
+        if tm_upload is not None:
+            imported = tm.import_json(tm_upload.read().decode("utf-8"))
+            st.toast(f"Imported {imported} entries", icon="📥")
+            st.rerun()
 
     # ── Upload area ─────────────────────────────────────────────
     st.markdown(
@@ -619,6 +661,91 @@ def _render_job_queue() -> None:
             # Try to find any .log.jsonl in the output dir
             if output_dir.exists():
                 jsonl_files = list(output_dir.parent.glob("**/*.log.jsonl"))
+
+                # ── Review & Feedback (Translation Memory) ──
+                if jsonl_files and status == "completed":
+                    with st.expander("✏️ Review translations & save feedback"):
+                        st.caption(
+                            "Correct translations below, then click **Save to TM** to "
+                            "teach the AI your preferred phrasing. Saved pairs are used "
+                            "as few-shot examples in future translations."
+                        )
+                        tm = TranslationMemory(TM_PATH)
+                        # Collect all blocks from all log files
+                        review_blocks: list[dict] = []
+                        for lf in jsonl_files[:1]:
+                            for line in lf.read_text(encoding="utf-8").splitlines():
+                                try:
+                                    log_entry = json.loads(line)
+                                    pg = log_entry.get("page", "?")
+                                    for d in log_entry.get("details", []):
+                                        orig = d.get("original", "").strip()
+                                        trans = d.get("translated", "").strip()
+                                        if orig and trans:
+                                            review_blocks.append({
+                                                "page": pg,
+                                                "original": orig,
+                                                "translated": trans,
+                                            })
+                                except (json.JSONDecodeError, KeyError):
+                                    continue
+
+                        if not review_blocks:
+                            st.info("No translation blocks found in job logs.")
+                        else:
+                            tgt_lang = job.get("target_lang", "fa")
+                            for bi, blk in enumerate(review_blocks):
+                                st.markdown(f"---\n**Page {blk['page']}** — Block {bi + 1}")
+                                st.text_area(
+                                    "Original",
+                                    value=blk["original"],
+                                    height=80,
+                                    disabled=True,
+                                    key=f"rv-orig-{job['id']}-{bi}",
+                                )
+                                corrected = st.text_area(
+                                    "Translation (edit to correct)",
+                                    value=blk["translated"],
+                                    height=80,
+                                    key=f"rv-trans-{job['id']}-{bi}",
+                                )
+                                btn_c1, btn_c2, btn_c3 = st.columns(3)
+                                with btn_c1:
+                                    if st.button(
+                                        "✅ Accept as-is",
+                                        key=f"rv-accept-{job['id']}-{bi}",
+                                        use_container_width=True,
+                                        help="Save the AI output as a positive example",
+                                    ):
+                                        tm.add(TMEntry(
+                                            source=blk["original"],
+                                            target=blk["translated"],
+                                            target_lang=tgt_lang,
+                                            source_job=job["id"],
+                                        ))
+                                        st.toast(f"Saved to TM (block {bi+1})", icon="✅")
+                                with btn_c2:
+                                    if st.button(
+                                        "💾 Save correction",
+                                        key=f"rv-save-{job['id']}-{bi}",
+                                        use_container_width=True,
+                                        help="Save your corrected version to TM",
+                                    ):
+                                        tm.add(TMEntry(
+                                            source=blk["original"],
+                                            target=corrected,
+                                            target_lang=tgt_lang,
+                                            source_job=job["id"],
+                                        ))
+                                        st.toast(f"Correction saved to TM (block {bi+1})", icon="💾")
+                                with btn_c3:
+                                    st.button(
+                                        "⏭ Skip",
+                                        key=f"rv-skip-{job['id']}-{bi}",
+                                        use_container_width=True,
+                                    )
+
+                # ── Log viewer ──
                 if jsonl_files:
                     with st.expander("📋 Translation logs"):
                         for lf in jsonl_files[:1]:

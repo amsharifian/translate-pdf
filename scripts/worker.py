@@ -99,7 +99,14 @@ def main() -> None:
                 if get_job_status(job_id) == "cancelled":
                     update_job_status(job_id, "cancelled")
                     break
-                out_path = output_dir / f"{in_path.stem}.fa.pdf"
+                # Unique output name: include short job ID to avoid collisions
+                short_id = job_id[:8]
+                out_path = output_dir / f"{in_path.stem}.{short_id}.fa.pdf"
+
+                # Remove stale log so resume logic doesn't skip pages
+                log_path = out_path.with_suffix(".log.jsonl")
+                if log_path.exists():
+                    log_path.unlink()
 
                 def on_pause() -> None:
                     while True:

@@ -96,6 +96,21 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Draw debug markers/boxes to verify output rendering",
     )
+    parser.add_argument(
+        "--glossary",
+        default=None,
+        help="Path to a glossary file (one 'term=translation' per line)",
+    )
+    parser.add_argument(
+        "--pages",
+        default=None,
+        help="Page range to translate, e.g. '1-5,10,15-20'. Default: all pages.",
+    )
+    parser.add_argument(
+        "--side-by-side",
+        action="store_true",
+        help="Interleave original and translated pages in the output PDF",
+    )
     return parser
 
 
@@ -150,6 +165,29 @@ def main() -> int:
     font_fallback = resolve_font_path(args.font_fallback) if args.font_fallback else None
     print(f"Using font: {font_path}")
 
+    # Parse glossary
+    glossary: dict[str, str] = {}
+    if args.glossary:
+        gp = Path(args.glossary)
+        if gp.exists():
+            for line in gp.read_text(encoding="utf-8").splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    glossary[k.strip()] = v.strip()
+    config.glossary = glossary
+
+    # Parse page range
+    page_range_set = None
+    if args.pages:
+        page_range_set = set()
+        for part in args.pages.split(","):
+            part = part.strip()
+            if "-" in part:
+                lo, hi = part.split("-", 1)
+                page_range_set.update(range(int(lo), int(hi) + 1))
+            elif part.isdigit():
+                page_range_set.add(int(part))
+
     for pdf_path in inputs:
         if not pdf_path.exists():
             print(f"Skipping missing file: {pdf_path}", file=sys.stderr)
@@ -180,6 +218,8 @@ def main() -> int:
                         pbar.reset(total=total),
                         pbar.update(current - pbar.n),
                     ),
+                    page_range=page_range_set,
+                    side_by_side=args.side_by_side,
                 )
             except Exception as exc:
                 if not font_fallback:
@@ -201,6 +241,8 @@ def main() -> int:
                         pbar.reset(total=total),
                         pbar.update(current - pbar.n),
                     ),
+                    page_range=page_range_set,
+                    side_by_side=args.side_by_side,
                 )
         except RateLimitError as exc:
             print(

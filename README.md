@@ -1,30 +1,20 @@
-# Stormlight Translate (PDF to Farsi)
+# Stormlight Translate
 
-A small Python CLI that selects PDFs via an input switch, translates them to Farsi, and saves new PDFs.
+A Python toolkit for translating PDFs while preserving the original layout. Supports 13 languages, OpenAI and local Ollama models, a CLI, and a full-featured Streamlit web app with background job processing.
 
 ## Quick Setup
 
-**macOS / Linux**
-
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
+python3 -m venv prun
+source prun/bin/activate
+pip install -e .
 ```
 
-**Windows (PowerShell)**
-
-```powershell
-py -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
-py -m pip install -r requirements.txt
-```
+This installs the `translate-pdf` CLI and all Python dependencies (including `cryptography` and `httpx` for API-key encryption and webhook support).
 
 ## Translation Provider
 
 This project uses the OpenAI API by default.
-
-Set environment variables:
 
 ```bash
 export OPENAI_API_KEY="your-openai-api-key"
@@ -33,13 +23,12 @@ export OPENAI_MODEL="gpt-4o-mini"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
-You can also pass these as CLI inputs:
+Or pass them directly:
 
 ```bash
-translate-pdf -i "./docs/*.pdf" \\
-  --openai-api-key "your-openai-api-key" \\
-  --openai-model "gpt-4o-mini" \\
-  --openai-base-url "https://api.openai.com/v1" \\
+translate-pdf -i "./docs/*.pdf" \
+  --openai-api-key "your-key" \
+  --openai-model "gpt-4o-mini" \
   --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
 ```
 
@@ -64,19 +53,7 @@ font:
 
 ## Local AI (Fully Offline)
 
-You can run translations fully locally for free using Ollama. This uses Ollama's OpenAI-compatible API at `http://localhost:11434/v1/` and does not require an API key.
-
-### Install Ollama
-
-**macOS / Linux**
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-**Windows**
-
-Download and install Ollama for Windows, then verify `ollama` is available in your terminal. citeturn0search0
+Translate locally for free using [Ollama](https://ollama.com). No API key required.
 
 1. Start Ollama and pull a model:
 ```bash
@@ -84,28 +61,26 @@ ollama serve
 ollama run qwen3:8b
 ```
 
-
-2. Translate locally:
+2. Translate:
 ```bash
 translate-pdf -i "./docs/*.pdf" \
-  --provider ollama \
-  --model qwen3:8b \
+  --provider ollama --model qwen3:8b \
   --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
 ```
 
 Or use the shortcut:
-
 ```bash
-translate-pdf -i "./docs/*.pdf" --local --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
+translate-pdf -i "./docs/*.pdf" --local --font Vazirmatn
 ```
 
 ### Recommended Local Models
 
-- `qwen3:8b` (good Persian support and size)
-- `llama3.3:70b` (large, good quality)
-- `llama4:scout` or `llama4:maverick` (very large; not 8B)
-
-Note: Llama 4 models available in Ollama are very large (Scout is 109B, Maverick is 400B). There is no official 8B Llama 4 in Ollama at this time.
+| Model | Size | Notes |
+|-------|------|-------|
+| `qwen3:8b` | 8B | Good Persian support, fast |
+| `llama3.3:70b` | 70B | High quality |
+| `llama4:scout` | 109B | Very large |
+| `llama4:maverick` | 400B | Very large |
 
 ### Local Setup Script
 
@@ -115,65 +90,151 @@ Note: Llama 4 models available in Ollama are very large (Scout is 109B, Maverick
 
 ## Font
 
-You must supply a TTF/OTF font that supports Persian/Farsi (e.g., Noto Naskh Arabic, Vazirmatn, or IRANSans).
+You must supply a TTF/OTF font that supports the target script. Bundled fonts:
 
-This repo includes downloaded fonts in `assets/fonts`:
-- Vazirmatn: `assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf`
-- Noto Naskh Arabic: `assets/fonts/NotoNaskhArabic-Regular.ttf`
-
-Example:
+- **Vazirmatn**: `assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf`
+- **Noto Naskh Arabic**: `assets/fonts/NotoNaskhArabic-Regular.ttf`
 
 ```bash
-translate-pdf -i "./docs/*.pdf" --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
+translate-pdf -i "./docs/*.pdf" --font Vazirmatn
 translate-pdf -i "./docs/*.pdf" --font "assets/fonts/NotoNaskhArabic-Regular.ttf"
-translate-pdf -i "./docs/*.pdf" --font "Vazirmatn"
 ```
 
-## Usage
+## CLI Usage
 
 ```bash
-translate-pdf -i ./invoices --font /path/to/Vazirmatn-Regular.ttf
+# Basic
+translate-pdf -i ./invoices --font Vazirmatn
+
+# Multiple files with custom output
 translate-pdf -i ./file1.pdf ./file2.pdf --out-dir ./out --font /path/to/font.ttf
-translate-pdf -i "./docs/*.pdf" --provider dummy --font /path/to/font.ttf
-translate-pdf -i "./docs/*.pdf" --model gpt-4o-mini --font /path/to/font.ttf
-translate-pdf -i "./docs/*.pdf" --provider ollama --model qwen3:8b --font /path/to/font.ttf
+
+# Specific provider & model
+translate-pdf -i "./docs/*.pdf" --provider ollama --model qwen3:8b --font Vazirmatn
+
+# Translate specific pages only
+translate-pdf -i doc.pdf --pages "1-5,10,15-20" --font Vazirmatn
+
+# Side-by-side output (original + translated pages interleaved)
+translate-pdf -i doc.pdf --side-by-side --font Vazirmatn
+
+# Use a glossary file (one "term=translation" per line)
+translate-pdf -i doc.pdf --glossary terms.txt --font Vazirmatn
+
+# Target a different language (default: fa)
+translate-pdf -i doc.pdf --lang ar --font Vazirmatn
 ```
+
+### CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `-i`, `--input` | PDF file(s), directory, or glob(s) |
+| `-o`, `--out-dir` | Output directory (default: `translated`) |
+| `--lang` | Target language code (default: `fa`) |
+| `--provider` | `openai`, `ollama`, or `dummy` |
+| `--local` | Shortcut for Ollama mode |
+| `--model` | Model override |
+| `--font` | Font path or installed name |
+| `--font-fallback` | Fallback font if primary fails |
+| `--glossary` | Glossary file path |
+| `--pages` | Page range (e.g. `1-5,10`) |
+| `--side-by-side` | Interleave original + translated pages |
+| `--force` | Overwrite existing outputs |
+| `--verbose` | Print progress |
+| `--debug-draw` | Draw debug markers on output |
 
 ## Web App (Streamlit)
 
-A simple web app is included for non-terminal users. It works on macOS and Windows.
+A full-featured web interface for uploading PDFs, configuring translation, and managing jobs.
 
-### Install Streamlit
-
-**macOS / Linux**
+### Running
 
 ```bash
-python3 -m pip install streamlit
-```
-
-**Windows**
-
-```bash
-py -m pip install streamlit
-```
-
-Run it locally:
-
-```bash
+pip install -e .
 streamlit run app.py
 ```
 
-On Windows if `streamlit` is not on PATH:
+### Features
+
+- **Multi-language support** — 13 target languages: Farsi, Arabic, Turkish, Urdu, French, German, Spanish, Chinese, Japanese, Korean, Russian, Hindi, English
+- **PDF preview** — View uploaded PDF pages before translating
+- **Page range selection** — Translate only specific pages (e.g. `1-5,10,15-20`)
+- **Glossary** — Per-job glossary terms to ensure consistent terminology
+- **Global glossary** — Editable in the sidebar; automatically merged into every job. Stored in `jobs/glossary.json`
+- **Side-by-side output** — Interleave original and translated pages in the output PDF
+- **Cost estimate** — Rough token-based cost estimate before submitting a job
+- **Job naming** — Give custom names to jobs for easy identification
+- **Job logs viewer** — View per-page translation logs for any job
+- **Output preview** — Thumbnail previews of translated PDF pages
+- **Webhook notifications** — Optionally receive a POST request when a job completes or fails
+- **Persistent notifications** — Toast alerts for completed/failed jobs, persisted across page refreshes
+- **Auto-polling** — Job queue refreshes every 5 seconds automatically
+- **Worker auto-start** — The background worker starts automatically when you submit a job. Status and restart controls are in the sidebar
+- **Settings persistence** — Provider, model, base URL, and API key are remembered across sessions
+- **Dark mode** — Fully styled for both light and dark Streamlit themes
+- **API key encryption** — Keys are encrypted at rest using Fernet symmetric encryption (`jobs/.key`)
+
+### Background Worker
+
+The worker processes queued jobs in the background. It starts automatically when you submit a job from the web app. You can also start it manually:
 
 ```bash
-py -m streamlit run app.py
+python scripts/worker.py
 ```
 
-The web app supports:
-- OpenAI API mode (enter your API key)
-- Local Ollama mode (no key required)
-- Dummy mode for testing
-- Upload PDF(s), pick a bundled font, and download translated PDFs
+Or run both web app and worker together:
+
+```bash
+python scripts/run_stormlight.py
+```
+
+Worker status is shown in the sidebar with options to restart if needed.
+
+### Global Glossary
+
+The global glossary lives at `jobs/glossary.json` and is editable from the sidebar. Every job automatically inherits these terms. Per-job glossary entries override global ones.
+
+Example `jobs/glossary.json`:
+
+```json
+{
+  "Machine Learning": "یادگیری ماشین",
+  "Neural Network": "شبکه عصبی",
+  "Artificial Intelligence": "هوش مصنوعی",
+  "Algorithm": "الگوریتم",
+  "Database": "پایگاه داده"
+}
+```
+
+## Architecture
+
+```
+translator/
+├── cli.py          # CLI entry point (translate-pdf command)
+├── config.py       # YAML config loader
+├── crypto.py       # Fernet encryption for API keys at rest
+├── font_utils.py   # Font discovery and resolution
+├── job_queue.py    # SQLite-backed job CRUD
+├── pdf_io.py       # PDF file discovery
+├── render.py       # Core PDF → translate → render pipeline
+└── translate.py    # LLM translation with retry & chunking
+
+scripts/
+├── worker.py       # Background job processor
+├── run_stormlight.py  # Launcher for web app + worker
+└── ollama_pull.sh  # Helper to pull Ollama models
+
+app.py              # Streamlit web app
+config.yml          # Default configuration
+```
+
+### Key Implementation Details
+
+- **Binary search font fitting** — Finds the largest font size that fits each text block's bounding box
+- **Exponential backoff retry** — LLM calls retry up to 5 times with 1s/2s/4s/8s/16s delays on transient errors
+- **Sentence-boundary chunking** — Long text blocks are split on sentence boundaries before translation
+- **Page-level resume** — Translation progress is logged to `.log.jsonl` files, allowing interrupted jobs to resume from the last completed page
 
 ## Notes
 
@@ -183,8 +244,8 @@ The web app supports:
 ## Debugging
 
 ```bash
-translate-pdf -i "./docs/*.pdf" --font /path/to/font.ttf --verbose
-translate-pdf -i "./docs/*.pdf" --font /path/to/font.ttf --verbose --debug-draw
+translate-pdf -i "./docs/*.pdf" --font Vazirmatn --verbose
+translate-pdf -i "./docs/*.pdf" --font Vazirmatn --verbose --debug-draw
 ```
 
 You can also specify a fallback font:
@@ -193,4 +254,10 @@ You can also specify a fallback font:
 translate-pdf -i "./docs/*.pdf" \
   --font /path/to/primary.ttf \
   --font-fallback /path/to/fallback.ttf
+```
+
+To diagnose stuck or failed jobs, use the diagnostic script:
+
+```bash
+python scripts/debug_jobs.py
 ```

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+
+# Virtual environments
+prun/
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project outputs
+translated/
+Toofan/
+sample_english.pdf
+jobs/queue.db
+jobs/.key
+jobs/.worker.pid
+jobs/.notifications.json
+jobs/*/uploads/
+jobs/*/outputs/
+*.log.jsonl
+
+# Secrets — don't ignore config.yml (has no keys by default)
+# If you add real keys, consider using env vars instead

@@ -2,5 +2,9 @@ openai:
   api_key: ""
   model: "gpt-4o-mini"
   base_url: "https://api.openai.com/v1"
+local:
+  model: "qwen3:8b"
+  base_url: "http://localhost:11434/v1"
+  api_key: "ollama"
 font:
   default_path: "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"

@@ -8,7 +8,9 @@ from translator.pdf_io import discover_pdfs
 from translator.render import translate_pdf_preserve_layout
 from translator.translate import load_translator_config, translate_texts
 from translator.font_utils import resolve_font_path
-from translator.config import load_config, get_openai_config, get_default_font_path
+from translator.config import load_config, get_openai_config, get_default_font_path, get_local_config
+from openai import OpenAIError, RateLimitError
+from tqdm import tqdm
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -36,8 +38,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provider",
         default="openai",
-        choices=["openai", "dummy"],
+        choices=["openai", "ollama", "dummy"],
         help="Translation provider",
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Ollama mode (overrides --provider)",
     )
     parser.add_argument(
         "--model",
@@ -60,14 +67,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="OpenAI base URL (overrides OPENAI_BASE_URL)",
     )
     parser.add_argument(
+        "--local-base-url",
+        default=None,
+        help="Local AI base URL (overrides local.base_url in config.yml)",
+    )
+    parser.add_argument(
         "--font",
         required=False,
         help="Font path or installed font name that supports Farsi",
     )
     parser.add_argument(
+        "--font-fallback",
+        default="assets/fonts/NotoNaskhArabic-Regular.ttf",
+        help="Fallback font path to try if the primary font fails",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite existing output files",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print progress while translating",
+    )
+    parser.add_argument(
+        "--debug-draw",
+        action="store_true",
+        help="Draw debug markers/boxes to verify output rendering",
     )
     return parser
 
@@ -86,15 +113,27 @@ def main() -> int:
 
     cfg = load_config(args.config)
     openai_cfg = get_openai_config(cfg)
+    local_cfg = get_local_config(cfg)
     default_font = get_default_font_path(cfg)
 
-    config = load_translator_config(
-        args.provider,
-        args.model or openai_cfg.get("model"),
-        api_key_override=args.openai_api_key or openai_cfg.get("api_key"),
-        base_url_override=args.openai_base_url or openai_cfg.get("base_url"),
+    provider = "ollama" if args.local else args.provider
+
+    model_override = args.model or (local_cfg.get("model") if provider == "ollama" else openai_cfg.get("model"))
+    api_key_override = args.openai_api_key or (
+        local_cfg.get("api_key") if provider == "ollama" else openai_cfg.get("api_key")
     )
-    if args.provider == "openai" and not config.api_key:
+    if provider == "ollama":
+        base_url_override = args.local_base_url or local_cfg.get("base_url")
+    else:
+        base_url_override = args.openai_base_url or openai_cfg.get("base_url")
+
+    config = load_translator_config(
+        provider,
+        model_override,
+        api_key_override=api_key_override,
+        base_url_override=base_url_override,
+    )
+    if provider == "openai" and not config.api_key:
         print(
             "Missing OpenAI API key. Provide --openai-api-key or set OPENAI_API_KEY.",
             file=sys.stderr,
@@ -108,6 +147,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    font_fallback = resolve_font_path(args.font_fallback) if args.font_fallback else None
     print(f"Using font: {font_path}")
 
     for pdf_path in inputs:
@@ -123,12 +163,61 @@ def main() -> int:
             print(f"Skipping existing output (use --force to overwrite): {out_path}")
             continue
 
-        translate_pdf_preserve_layout(
-            pdf_path,
-            out_path,
-            font_path,
-            lambda texts: translate_texts(texts, args.lang, config),
-        )
+        if args.verbose:
+            print(f"Translating: {pdf_path}")
+        # total may be unknown until we open the PDF; tqdm handles dynamic totals
+        pbar = tqdm(total=0, desc=f"{pdf_path.name} pages", unit="page", leave=False)
+        try:
+            try:
+                translate_pdf_preserve_layout(
+                    pdf_path,
+                    out_path,
+                    font_path,
+                    lambda texts: translate_texts(texts, args.lang, config),
+                    verbose=args.verbose,
+                    debug_draw=args.debug_draw,
+                    on_page=lambda current, total: (
+                        pbar.reset(total=total),
+                        pbar.update(current - pbar.n),
+                    ),
+                )
+            except Exception as exc:
+                if not font_fallback:
+                    raise
+                if args.verbose:
+                    print(
+                        f"Primary font failed ({font_path}). Retrying with fallback {font_fallback}",
+                        file=sys.stderr,
+                    )
+                pbar.reset(total=0)
+                translate_pdf_preserve_layout(
+                    pdf_path,
+                    out_path,
+                    font_fallback,
+                    lambda texts: translate_texts(texts, args.lang, config),
+                    verbose=args.verbose,
+                    debug_draw=args.debug_draw,
+                    on_page=lambda current, total: (
+                        pbar.reset(total=total),
+                        pbar.update(current - pbar.n),
+                    ),
+                )
+        except RateLimitError as exc:
+            print(
+                "OpenAI rate limit or quota error. Please check your plan/billing "
+                "and try again.",
+                file=sys.stderr,
+            )
+            print(str(exc), file=sys.stderr)
+            pbar.close()
+            return 3
+        except OpenAIError as exc:
+            print("OpenAI API error. Please try again or verify your API key.", file=sys.stderr)
+            print(str(exc), file=sys.stderr)
+            pbar.close()
+            return 3
+        finally:
+            pbar.close()
         print(f"Wrote: {out_path}")
 
     return 0

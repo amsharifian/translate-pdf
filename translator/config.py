@@ -37,3 +37,11 @@ def get_openai_config(cfg: Dict[str, Any]) -> Dict[str, Optional[str]]:
 
 def get_default_font_path(cfg: Dict[str, Any]) -> Optional[str]:
     return _get_nested(cfg, "font", "default_path")
+
+
+def get_local_config(cfg: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    return {
+        "model": _get_nested(cfg, "local", "model"),
+        "base_url": _get_nested(cfg, "local", "base_url"),
+        "api_key": _get_nested(cfg, "local", "api_key"),
+    }

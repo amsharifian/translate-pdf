@@ -33,7 +33,7 @@ def translate_texts(texts: Iterable[str], target_lang: str, config: TranslatorCo
     if config.provider == "dummy":
         return list(texts)
 
-    if config.provider != "openai":
+    if config.provider not in ("openai", "ollama"):
         raise ValueError(f"Unknown provider: {config.provider}")
 
     client = OpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -79,6 +79,13 @@ def load_translator_config(
     api_key_override: str | None = None,
     base_url_override: str | None = None,
 ) -> TranslatorConfig:
+    if provider == "ollama":
+        return TranslatorConfig(
+            provider=provider,
+            api_key=api_key_override or os.getenv("OLLAMA_API_KEY", "ollama"),
+            base_url=base_url_override or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            model=model_override or os.getenv("OLLAMA_MODEL", "qwen3:8b"),
+        )
     return TranslatorConfig(
         provider=provider,
         api_key=api_key_override or os.getenv("OPENAI_API_KEY"),

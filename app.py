@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -728,6 +729,10 @@ def _render_job_queue() -> None:
                                 _open_folder(output_dir)
                     elif lbl == "🗑 Remove":
                         if st.button(lbl, key=f"delete-{job['id']}", use_container_width=True):
+                            # Remove job directory (uploads + outputs) but keep global TM/glossary
+                            job_dir = Path("jobs") / job["id"]
+                            if job_dir.is_dir():
+                                shutil.rmtree(job_dir)
                             delete_job(job["id"])
                             st.rerun()
 

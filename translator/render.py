@@ -42,44 +42,45 @@ def _block_text_and_size(block: dict) -> tuple[str, float]:
 
 
 def _bisect_font_size(
-    page: fitz.Page,
     rect: fitz.Rect,
     shaped: str,
     font_name: str,
     font_file: str,
     min_size: float,
     max_size: float,
-) -> tuple[float, int]:
-    """Binary-search for the largest font size that fits *rect*. Returns (size, rc).
+) -> float:
+    """Binary-search for the largest font size that fits *rect*.
 
-    Uses a temporary scratch page for probing so no text is written to the real page.
+    Always returns at least *min_size* (caller clips via insert_textbox).
+    Uses temporary scratch pages so no text is written to any real page.
     """
-    # Create a scratch page with the same dimensions for probing
-    scratch_doc = fitz.open()
-    scratch_page = scratch_doc.new_page(width=page.rect.width, height=page.rect.height)
 
-    lo, hi = min_size, max_size
-    best_size, best_rc = lo, -1
-    while hi - lo > 0.5:
-        mid = (lo + hi) / 2
-        # Probe on scratch page (we recreate it each time to avoid accumulation)
-        test_doc = fitz.open()
-        test_page = test_doc.new_page(width=page.rect.width, height=page.rect.height)
-        rc = test_page.insert_textbox(
+    def _fits(size: float) -> bool:
+        td = fitz.open()
+        tp = td.new_page(width=rect.width + 200, height=rect.height + 200)
+        rc = tp.insert_textbox(
             rect, shaped,
             fontname=font_name, fontfile=font_file,
-            fontsize=mid, color=(0, 0, 0),
+            fontsize=size, color=(0, 0, 0),
             align=fitz.TEXT_ALIGN_RIGHT,
         )
-        test_doc.close()
-        if rc is not None and rc >= 0:
-            best_size, best_rc = mid, rc
+        td.close()
+        return rc is not None and rc >= 0
+
+    # Fast paths
+    if max_size <= min_size or _fits(max_size):
+        return max_size
+    if not _fits(min_size):
+        return min_size          # nothing fits — caller will insert clipped
+
+    lo, hi = min_size, max_size
+    while hi - lo > 0.5:
+        mid = (lo + hi) / 2
+        if _fits(mid):
             lo = mid
         else:
             hi = mid
-
-    scratch_doc.close()
-    return best_size, best_rc
+    return lo
 
 
 def _completed_pages(log_path: Path) -> Set[int]:
@@ -260,42 +261,16 @@ def translate_pdf_preserve_layout(
             shaped = _shape_rtl_text(translated_text)
             max_size = max(6.0, min(font_size, 24.0))
 
-            best_size, inserted = _bisect_font_size(
-                target_page, rect, shaped, font_name, font_path, 6.0, max_size,
+            best_size = _bisect_font_size(
+                rect, shaped, font_name, font_path, 6.0, max_size,
             )
 
-            if inserted is not None and inserted >= 0:
-                # Commit the actual insert (bisect uses overlay=False for probing)
-                target_page.insert_textbox(
-                    rect, shaped,
-                    fontname=font_name, fontfile=font_path,
-                    fontsize=best_size, color=(0, 0, 0),
-                    align=fitz.TEXT_ALIGN_RIGHT,
-                )
-            else:
-                # Expand box downward and retry
-                expanded = fitz.Rect(rect.x0, rect.y0, rect.x1, target_page.rect.y1 - 20)
-                best_size, inserted = _bisect_font_size(
-                    target_page, expanded, shaped, font_name, font_path, 6.0, max_size,
-                )
-                if inserted is not None and inserted >= 0:
-                    target_page.insert_textbox(
-                        expanded, shaped,
-                        fontname=font_name, fontfile=font_path,
-                        fontsize=best_size, color=(0, 0, 0),
-                        align=fitz.TEXT_ALIGN_RIGHT,
-                    )
-                    if verbose:
-                        logger.info(
-                            "[%s] Page %d block %d: inserted after expanding box with size %.1f",
-                            pdf_path.name, page_index, block_index, best_size,
-                        )
-                else:
-                    if verbose:
-                        logger.info(
-                            "[%s] Page %d block %d: could not fit text even after expanding",
-                            pdf_path.name, page_index, block_index,
-                        )
+            target_page.insert_textbox(
+                rect, shaped,
+                fontname=font_name, fontfile=font_path,
+                fontsize=best_size, color=(0, 0, 0),
+                align=fitz.TEXT_ALIGN_RIGHT,
+            )
 
         _log_event(log_path, {
             "event": "page_done",

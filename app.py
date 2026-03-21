@@ -395,12 +395,16 @@ def main() -> None:
                 placeholder="https://hooks.slack.com/...",
                 help="POST a JSON payload to this URL when the job finishes.",
             )
-        custom_prompt = st.text_area(
-            "Custom prompt (optional)",
-            placeholder="e.g. Use formal tone. This is a legal document. Keep brand names in English.",
-            height=100,
-            help="Extra instructions appended to the system prompt for this job. Use this to guide the AI's style, tone, or domain-specific behavior.",
-        )
+
+    # ── Custom prompt (always visible) ──────────────────────────
+    st.markdown("#### 💬 Instructions for the AI")
+    custom_prompt = st.text_area(
+        "Tell the AI how to translate this job",
+        placeholder="e.g. Use formal tone. This is a legal document. Keep brand names in English. Translate numbers to Persian numerals.",
+        height=100,
+        help="These instructions are added to the system prompt for this job. Use this to control style, tone, terminology, or any domain-specific behavior.",
+        label_visibility="collapsed",
+    )
 
     # ── Preview ─────────────────────────────────────────────────
     if uploaded:

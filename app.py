@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ import streamlit as st
 import yaml
 
 from translator.font_utils import resolve_font_path
-from translator.config import load_config, get_openai_config, get_local_config
+from translator.config import load_config, get_openai_config, get_local_config, get_huggingface_config
 from translator.translate import HUGGINGFACE_MODELS
 from translator.job_queue import (
     init_db, create_job, list_jobs, update_job_status, update_priority, delete_job,
@@ -50,11 +51,14 @@ SUPPORTED_LANGUAGES = {
 
 # Rough cost per 1M tokens (input) for common OpenAI models
 _TOKEN_PRICING = {
+    "gpt-4.1-nano": 0.10,
+    "gpt-4.1-mini": 0.40,
+    "gpt-4.1": 2.00,
     "gpt-4o-mini": 0.15,
     "gpt-4o": 2.50,
-    "gpt-4-turbo": 10.00,
-    "gpt-3.5-turbo": 0.50,
+    "o4-mini": 1.10,
 }
+_OPENAI_MODELS = list(_TOKEN_PRICING.keys())
 _CHARS_PER_TOKEN = 4  # approximate
 
 STATUS_STYLE = {
@@ -195,7 +199,12 @@ def _save_settings(cfg_path: str, provider: str, model: str, base_url: str, api_
     data = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
     if not isinstance(data, dict):
         data = {}
-    if provider == "ollama":
+    if provider == "huggingface":
+        data.setdefault("huggingface", {})
+        data["huggingface"]["model"] = model
+        if api_key:
+            data["huggingface"]["api_key"] = api_key
+    elif provider == "ollama":
         data.setdefault("local", {})
         data["local"]["model"] = model
         data["local"]["base_url"] = base_url
@@ -223,33 +232,56 @@ def main() -> None:
     cfg = load_config(cfg_path)
     openai_cfg = get_openai_config(cfg)
     local_cfg = get_local_config(cfg)
+    hf_cfg = get_huggingface_config(cfg)
 
     # ── Sidebar ─────────────────────────────────────────────────
     with st.sidebar:
 
         # ── Settings ────────────────────────────────────────────
         with st.expander("⚙️ Settings", expanded=True):
-            mode = st.radio("Translation mode", ["OpenAI API", "Local (Ollama)", "HuggingFace (local)"], index=1)
+            mode = st.radio("Translation mode", ["HuggingFace (local)", "Local (Ollama)", "OpenAI API", "Google Translate"], index=0)
 
-            if mode == "OpenAI API":
-                provider = "openai"
-                model = st.text_input("Model", value=openai_cfg.get("model") or "gpt-4o-mini")
-                api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
-                base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
-            elif mode == "HuggingFace (local)":
+            if mode == "HuggingFace (local)":
                 provider = "huggingface"
                 hf_labels = {v["label"]: k for k, v in HUGGINGFACE_MODELS.items()}
                 hf_choice = st.selectbox("Model", list(hf_labels.keys()))
                 model = hf_labels[hf_choice]
-                api_key = ""
+                api_key = st.text_input(
+                    "HuggingFace Token (for model download)", type="password",
+                    value=hf_cfg.get("api_key") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN") or "",
+                    help="Free token from huggingface.co/settings/tokens — needed to download models. "
+                         "Once downloaded, models are cached locally. Click Save Settings to persist.",
+                )
                 base_url = ""
-                st.caption(f"🧠 `{model}` — runs locally, no API key needed")
-                st.info("First run will download the model (~250MB–2.5GB). Requires `transformers` and `torch`.")
-            else:
+                st.caption(f"🧠 `{model}` — runs locally via transformers")
+                if not api_key:
+                    st.warning(
+                        "⚠️ A free HuggingFace token is needed to download models. "
+                        "Get one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) "
+                        "or set `HF_TOKEN` env var. Once downloaded, models are cached locally."
+                    )
+                else:
+                    st.info("✅ Token provided. Models run 100% locally after download.")
+            elif mode == "Local (Ollama)":
                 provider = "ollama"
                 model = st.text_input("Model", value=local_cfg.get("model") or "qwen3:8b")
                 api_key = st.text_input("API Key (optional)", value=local_cfg.get("api_key") or "ollama")
                 base_url = st.text_input("Base URL", value=local_cfg.get("base_url") or "http://localhost:11434/v1")
+            elif mode == "OpenAI API":
+                provider = "openai"
+                saved_model = openai_cfg.get("model") or "gpt-4.1-nano"
+                idx = _OPENAI_MODELS.index(saved_model) if saved_model in _OPENAI_MODELS else 0
+                model = st.selectbox("Model", _OPENAI_MODELS, index=idx,
+                                     format_func=lambda m: f"{m}  (${_TOKEN_PRICING[m]:.2f}/1M tok)")
+                api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
+                base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
+            else:  # Google Translate
+                provider = "google"
+                model = "google"
+                api_key = ""
+                base_url = ""
+                st.caption("🌐 Free Google Translate — no API key needed")
+                st.info("💡 Uses the free `googletrans` library. Good for quick translations.")
 
             if api_key:
                 masked = api_key[:6] + "..." + api_key[-4:] if len(api_key) > 10 else api_key
@@ -289,7 +321,7 @@ def main() -> None:
                 use_container_width=True,
             ):
                 if worker_alive and WORKER_PID_FILE.exists():
-                    import os, signal
+                    import signal
                     try:
                         pid = int(WORKER_PID_FILE.read_text().strip())
                         os.kill(pid, signal.SIGTERM)
@@ -519,6 +551,20 @@ def main() -> None:
     # ── Preview ─────────────────────────────────────────────────
     if uploaded:
         with st.expander("📖 Preview — extracted text blocks", expanded=False):
+            if "preview_zoom" not in st.session_state:
+                st.session_state.preview_zoom = 350
+            zc1, zc2, zc3 = st.columns([1, 1, 2])
+            with zc1:
+                if st.button("➖", key="preview_zoom_out") and st.session_state.preview_zoom > 100:
+                    st.session_state.preview_zoom -= 50
+                    st.rerun()
+            with zc2:
+                if st.button("➕", key="preview_zoom_in") and st.session_state.preview_zoom < 800:
+                    st.session_state.preview_zoom += 50
+                    st.rerun()
+            with zc3:
+                st.caption(f"🔍 {st.session_state.preview_zoom}%")
+            preview_zoom = st.session_state.preview_zoom
             for f in uploaded[:3]:  # limit preview to first 3 files
                 st.markdown(f"**{f.name}**")
                 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -532,8 +578,8 @@ def main() -> None:
                         for b in blocks[:5]:
                             st.text(b["text"][:200])
                     # Show thumbnail of first page
-                    png = _pdf_page_thumbnail(tmp_path, 0, 350)
-                    st.image(png, caption=f"{f.name} — page 1", width=350)
+                    png = _pdf_page_thumbnail(tmp_path, 0, preview_zoom)
+                    st.image(png, caption=f"{f.name} — page 1", width=preview_zoom)
                 except Exception as exc:
                     st.warning(f"Could not preview: {exc}")
                 finally:
@@ -560,7 +606,7 @@ def main() -> None:
             st.info(f"💰 Estimated: ~{tokens:,} tokens → **${cost:.4f}** (input only, {model} pricing)")
 
     # ── Submit ──────────────────────────────────────────────────
-    submit = st.button("🚀 Submit Job", type="primary", use_container_width=True)
+    submit = st.button("📖 Submit Job", type="primary", use_container_width=True)
 
     if submit:
         if not uploaded:
@@ -569,7 +615,6 @@ def main() -> None:
         if provider == "openai" and not api_key:
             st.error("OpenAI API key is required for OpenAI mode.")
             return
-
         # Resolve font
         font_path = None
         if custom_font is not None:
@@ -720,7 +765,7 @@ def _render_job_queue() -> None:
             elif status == "completed":
                 btns = ["📂 Outputs", "🗑 Remove"]
             else:  # failed / cancelled
-                btns = ["🗑 Remove"]
+                btns = ["🔄 Retry", "🗑 Remove"]
 
             btn_cols = st.columns(len(btns))
             for idx, lbl in enumerate(btns):
@@ -750,6 +795,10 @@ def _render_job_queue() -> None:
                         if output_dir.exists():
                             if st.button(lbl, key=f"open-{job['id']}", use_container_width=True):
                                 _open_folder(output_dir)
+                    elif lbl == "🔄 Retry":
+                        if st.button(lbl, key=f"retry-{job['id']}", use_container_width=True):
+                            update_job_status(job["id"], "queued")
+                            st.rerun()
                     elif lbl == "🗑 Remove":
                         if st.button(lbl, key=f"delete-{job['id']}", use_container_width=True):
                             # Remove job directory (uploads + outputs) but keep global TM/glossary
@@ -778,8 +827,23 @@ def _render_job_queue() -> None:
                             )
                     # Show thumbnail of first output
                     try:
-                        png = _pdf_page_thumbnail(pdf_files[0], 0, 300)
-                        st.image(png, caption="Output preview — page 1", width=300)
+                        oz_key = f"output_zoom_{job['id']}"
+                        if oz_key not in st.session_state:
+                            st.session_state[oz_key] = 300
+                        ozc1, ozc2, ozc3 = st.columns([1, 1, 2])
+                        with ozc1:
+                            if st.button("➖", key=f"oz_out_{job['id']}") and st.session_state[oz_key] > 100:
+                                st.session_state[oz_key] -= 50
+                                st.rerun()
+                        with ozc2:
+                            if st.button("➕", key=f"oz_in_{job['id']}") and st.session_state[oz_key] < 800:
+                                st.session_state[oz_key] += 50
+                                st.rerun()
+                        with ozc3:
+                            st.caption(f"🔍 {st.session_state[oz_key]}%")
+                        output_zoom = st.session_state[oz_key]
+                        png = _pdf_page_thumbnail(pdf_files[0], 0, output_zoom)
+                        st.image(png, caption="Output preview — page 1", width=output_zoom)
                     except Exception:
                         pass
 
@@ -914,7 +978,13 @@ def _render_job_queue() -> None:
 
     # ── History ──
     if finished_jobs:
-        with st.expander(f"History — {len(finished_jobs)} finished job(s)", expanded=False):
+        if "history_expanded" not in st.session_state:
+            st.session_state.history_expanded = False
+        with st.expander(
+            f"History — {len(finished_jobs)} finished job(s)",
+            expanded=st.session_state.history_expanded,
+        ):
+            st.session_state.history_expanded = True
             for job in finished_jobs:
                 _render_job_card(job)
 

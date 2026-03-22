@@ -88,6 +88,32 @@ translate-pdf -i "./docs/*.pdf" --local --font Vazirmatn
 ./scripts/ollama_pull.sh qwen3:8b
 ```
 
+## HuggingFace Models (Open-Source)
+
+Run open-source translation models locally using HuggingFace `transformers`. No API key needed — models are downloaded automatically on first use.
+
+```bash
+pip install -e .
+```
+
+Requires Python ≤ 3.12 (for PyTorch compatibility).
+
+### Available Models
+
+| Model | HuggingFace ID | Size | Notes |
+|-------|---------------|------|-------|
+| **NLLB-200 600M** | `facebook/nllb-200-distilled-600M` | ~600MB | Recommended — fast, good quality |
+| **NLLB-200 1.3B** | `facebook/nllb-200-distilled-1.3B` | ~1.3GB | Best quality, larger model |
+| **mBART-50** | `facebook/mbart-large-50-many-to-many-mmt` | ~2.5GB | Multilingual (50 languages) |
+
+### CLI Usage
+
+```bash
+translate-pdf -i doc.pdf --provider huggingface --model facebook/nllb-200-distilled-600M --font Vazirmatn
+```
+
+In the web app, select **"HuggingFace (local)"** from the translation mode dropdown and pick a model.
+
 ## Font
 
 You must supply a TTF/OTF font that supports the target script. Bundled fonts:

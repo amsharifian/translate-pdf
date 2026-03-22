@@ -1,10 +1,13 @@
-openai:
-  api_key: ""
-  model: "gpt-4o-mini"
-  base_url: "https://api.openai.com/v1"
-local:
-  model: "qwen3:8b"
-  base_url: "http://localhost:11434/v1"
-  api_key: "ollama"
 font:
-  default_path: "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
+  default_path: assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf
+huggingface:
+  api_key: ''
+  model: facebook/nllb-200-distilled-600M
+local:
+  api_key: ollama
+  base_url: http://localhost:11434/v1
+  model: qwen3:8b
+openai:
+  api_key: ''
+  base_url: ''
+  model: Helsinki-NLP/opus-mt-en-fa

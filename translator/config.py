@@ -45,3 +45,10 @@ def get_local_config(cfg: Dict[str, Any]) -> Dict[str, Optional[str]]:
         "base_url": _get_nested(cfg, "local", "base_url"),
         "api_key": _get_nested(cfg, "local", "api_key"),
     }
+
+
+def get_huggingface_config(cfg: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    return {
+        "model": _get_nested(cfg, "huggingface", "model"),
+        "api_key": _get_nested(cfg, "huggingface", "api_key"),
+    }

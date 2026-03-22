@@ -453,9 +453,12 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
     uploaded = st.file_uploader(
         "📎 Drag & drop PDFs here, or click to browse",
         type=["pdf"], accept_multiple_files=True,
+        key=f"pdf_uploader_{st.session_state.uploader_key}",
     )
 
     # ── Advanced options ────────────────────────────────────────
@@ -611,6 +614,7 @@ def main() -> None:
         create_job(job)
         _ensure_worker()
         st.toast(f"✅ Job queued — {file_names}", icon="📄")
+        st.session_state.uploader_key += 1
         st.rerun()
 
     # ── Job Queue ───────────────────────────────────────────────

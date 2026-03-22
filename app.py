@@ -253,6 +253,14 @@ def main() -> None:
         with st.expander("🔤 Font", expanded=False):
             font_choice = st.selectbox("Font", list(BUNDLED_FONTS.keys()))
             custom_font = st.file_uploader("Or upload a TTF/OTF font", type=["ttf", "otf", "ttc"])
+            font_size_mode = st.radio(
+                "Font size",
+                ["Auto (match original)", "Fixed"],
+                horizontal=True,
+            )
+            font_size_override: float | None = None
+            if font_size_mode == "Fixed":
+                font_size_override = st.slider("Font size (pt)", 6.0, 36.0, 12.0, 0.5)
 
         # ── Language ────────────────────────────────────────────
         with st.expander("🌐 Language", expanded=False):
@@ -610,6 +618,7 @@ def main() -> None:
             "side_by_side": side_by_side,
             "webhook_url": webhook_url.strip() or None,
             "custom_prompt": custom_prompt.strip(),
+            "font_size": font_size_override,
         }
         create_job(job)
         _ensure_worker()

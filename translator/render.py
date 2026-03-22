@@ -51,14 +51,14 @@ def _bisect_font_size(
 ) -> float:
     """Binary-search for the largest font size that fits *rect*.
 
-    Uses a normalized (origin-based) rect on a temporary scratch page
+    Uses a single scratch document with a normalized (origin-based) rect
     so absolute page coordinates don't cause false negatives.
     """
-    # Normalize rect to origin so it always fits on the scratch page
     norm = fitz.Rect(0, 0, rect.width, rect.height)
+    # Reuse a single scratch doc for all probes
+    td = fitz.open()
 
     def _fits(size: float) -> bool:
-        td = fitz.open()
         tp = td.new_page(width=norm.width + 10, height=norm.height + 10)
         rc = tp.insert_textbox(
             norm, shaped,
@@ -66,12 +66,13 @@ def _bisect_font_size(
             fontsize=size, color=(0, 0, 0),
             align=fitz.TEXT_ALIGN_RIGHT,
         )
-        td.close()
         return rc is not None and rc >= 0
 
     if max_size <= min_size or _fits(max_size):
+        td.close()
         return max_size
     if not _fits(min_size):
+        td.close()
         return min_size
 
     lo, hi = min_size, max_size
@@ -81,6 +82,7 @@ def _bisect_font_size(
             lo = mid
         else:
             hi = mid
+    td.close()
     return lo
 
 
@@ -144,6 +146,7 @@ def translate_pdf_preserve_layout(
     page_range: Optional[Set[int]] = None,
     side_by_side: bool = False,
     log_path: Optional[Path] = None,
+    font_size_override: Optional[float] = None,
 ) -> None:
     if not font_path:
         raise ValueError("A TTF font path is required to render Farsi text.")
@@ -256,35 +259,50 @@ def translate_pdf_preserve_layout(
                 target_page.draw_rect(rect, color=(1, 0, 0), width=0.5)
 
         # Insert translated text with binary-search font sizing
-        for block_index, (rect, translated_text, font_size) in enumerate(
-            translated_triplets, start=1
-        ):
-            shaped = _shape_rtl_text(translated_text)
-            max_size = max(6.0, min(font_size, 24.0))
+        # Pre-shape all RTL text in one pass to avoid repeated reshaping
+        shaped_texts: List[str] = [_shape_rtl_text(t) for _, t, _ in translated_triplets]
 
-            best_size = _bisect_font_size(
-                rect, shaped, font_name, font_path, 6.0, max_size,
-            )
+        for block_index, ((rect, translated_text, font_size), shaped) in enumerate(
+            zip(translated_triplets, shaped_texts), start=1
+        ):
+            if font_size_override is not None:
+                best_size = font_size_override
+            else:
+                max_size = max(6.0, min(font_size, 24.0))
+                best_size = _bisect_font_size(
+                    rect, shaped, font_name, font_path, 6.0, max_size,
+                )
+
+            # Estimate required height: use a tall scratch rect to measure
+            line_height = best_size * 1.2
+            num_lines = shaped.count("\n") + 1
+            min_height = num_lines * line_height
+            use_rect = rect
+            if min_height > rect.height:
+                page_bottom = target_page.rect.y1 - 10
+                new_y1 = min(rect.y0 + min_height + 4, page_bottom)
+                use_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, new_y1)
 
             if verbose:
                 logger.info(
-                    "[%s] Page %d block %d: bbox=%s orig_size=%.1f best_size=%.1f text_len=%d",
+                    "[%s] Page %d block %d: bbox=%s orig_size=%.1f best_size=%.1f text_len=%d rect_h=%.1f",
                     pdf_path.name, page_index, block_index,
                     [round(c, 1) for c in rect], font_size, best_size, len(translated_text),
+                    use_rect.height,
                 )
 
             rc = target_page.insert_textbox(
-                rect, shaped,
+                use_rect, shaped,
                 fontname=font_name, fontfile=font_path,
                 fontsize=best_size, color=(0, 0, 0),
                 align=fitz.TEXT_ALIGN_RIGHT,
             )
 
-            # If text didn't fit the original rect, expand downward and retry
+            # If still didn't fit, expand by the exact overflow amount
             if rc is not None and rc < 0:
                 page_bottom = target_page.rect.y1 - 10
-                expanded = fitz.Rect(rect.x0, rect.y0, rect.x1,
-                                     min(rect.y1 - rc + 4, page_bottom))
+                expanded = fitz.Rect(use_rect.x0, use_rect.y0, use_rect.x1,
+                                     min(use_rect.y1 - rc + 4, page_bottom))
                 rc = target_page.insert_textbox(
                     expanded, shaped,
                     fontname=font_name, fontfile=font_path,
@@ -293,7 +311,7 @@ def translate_pdf_preserve_layout(
                 )
                 if verbose:
                     logger.info(
-                        "[%s] Page %d block %d: expanded rect to height=%.1f rc=%.1f",
+                        "[%s] Page %d block %d: expanded to height=%.1f rc=%.1f",
                         pdf_path.name, page_index, block_index,
                         expanded.height, rc if rc is not None else -999,
                     )

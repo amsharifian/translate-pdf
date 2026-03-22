@@ -85,6 +85,10 @@ def main() -> None:
 
             side_by_side = bool(job.get("side_by_side"))
 
+            font_size_override = job.get("font_size")  # None = auto
+            if font_size_override is not None:
+                font_size_override = float(font_size_override)
+
             config = load_translator_config(
                 provider=job["provider"],
                 model_override=job.get("model"),
@@ -133,7 +137,12 @@ def main() -> None:
                     on_pause=on_pause,
                     page_range=page_range_set,
                     side_by_side=side_by_side,
+                    font_size_override=font_size_override,
                 )
+
+            # Clean up resume logs from output directory
+            for logf in output_dir.glob("*.log.jsonl"):
+                logf.unlink(missing_ok=True)
 
             final_status = get_job_status(job_id)
             if final_status != "cancelled":

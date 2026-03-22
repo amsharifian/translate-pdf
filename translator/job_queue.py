@@ -60,6 +60,7 @@ def init_db() -> None:
             "webhook_url TEXT",
             "job_log TEXT",
             "custom_prompt TEXT DEFAULT ''",
+            "font_size REAL",
         ]:
             try:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_def}")
@@ -77,8 +78,9 @@ def create_job(job: Dict[str, Any]) -> None:
                 id, job_name, status, priority, provider, model, base_url, api_key, font_path,
                 input_files, output_dir, created_at, updated_at,
                 progress_current, progress_total, error,
-                target_lang, glossary, page_range, side_by_side, webhook_url, custom_prompt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                target_lang, glossary, page_range, side_by_side, webhook_url, custom_prompt,
+                font_size
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job["id"],
@@ -103,6 +105,7 @@ def create_job(job: Dict[str, Any]) -> None:
                 1 if job.get("side_by_side") else 0,
                 job.get("webhook_url"),
                 job.get("custom_prompt") or "",
+                job.get("font_size"),
             ),
         )
     conn.close()

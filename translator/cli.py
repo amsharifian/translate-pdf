@@ -122,6 +122,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Custom instructions appended to the system prompt (e.g. 'Use formal tone')",
     )
+    parser.add_argument(
+        "--font-size",
+        type=float,
+        default=None,
+        help="Fixed font size in points (default: auto-match original)",
+    )
     return parser
 
 
@@ -241,6 +247,7 @@ def main() -> int:
                     ),
                     page_range=page_range_set,
                     side_by_side=args.side_by_side,
+                    font_size_override=args.font_size,
                 )
             except Exception as exc:
                 if not font_fallback:
@@ -264,6 +271,7 @@ def main() -> int:
                     ),
                     page_range=page_range_set,
                     side_by_side=args.side_by_side,
+                    font_size_override=args.font_size,
                 )
         except RateLimitError as exc:
             print(

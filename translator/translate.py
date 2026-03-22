@@ -18,6 +18,30 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 1.0  # seconds
 
+# ── Well-known HuggingFace models for English→Farsi ────────────
+HUGGINGFACE_MODELS = {
+    "Helsinki-NLP/opus-mt-en-fa": {
+        "label": "OPUS-MT en→fa (fastest)",
+        "type": "marianmt",
+    },
+    "persiannlp/mt5-base-parsinlu-translation_en_fa": {
+        "label": "mT5-base ParsiNLU en→fa",
+        "type": "mt5",
+        "prefix": "translate English to Persian: ",
+    },
+    "persiannlp/mt5-small-parsinlu-translation_en_fa": {
+        "label": "mT5-small ParsiNLU en→fa (light)",
+        "type": "mt5",
+        "prefix": "translate English to Persian: ",
+    },
+    "facebook/mbart-large-50-many-to-many-mmt": {
+        "label": "mBART-50 multilingual",
+        "type": "mbart",
+        "src_lang": "en_XX",
+        "tgt_lang": "fa_IR",
+    },
+}
+
 
 @dataclass
 class TranslatorConfig:
@@ -125,9 +149,78 @@ def _build_system_prompt(
     return prompt
 
 
+# ── HuggingFace local model support ────────────────────────────
+_hf_pipeline_cache: dict[str, object] = {}
+
+
+def _get_hf_pipeline(model_name: str):
+    """Lazy-load and cache a HuggingFace translation pipeline."""
+    if model_name in _hf_pipeline_cache:
+        return _hf_pipeline_cache[model_name]
+
+    try:
+        from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM, MBartForConditionalGeneration, MBart50TokenizerFast
+    except ImportError:
+        raise ImportError(
+            "HuggingFace models require 'transformers' and 'torch'. "
+            "Install with: pip install transformers torch sentencepiece"
+        )
+
+    model_info = HUGGINGFACE_MODELS.get(model_name, {})
+    model_type = model_info.get("type", "auto")
+
+    logger.info("Loading HuggingFace model: %s (type=%s)", model_name, model_type)
+
+    if model_type == "mbart":
+        tokenizer = MBart50TokenizerFast.from_pretrained(model_name)
+        tokenizer.src_lang = model_info.get("src_lang", "en_XX")
+        model = MBartForConditionalGeneration.from_pretrained(model_name)
+        pipe = pipeline(
+            "translation",
+            model=model,
+            tokenizer=tokenizer,
+            src_lang=model_info.get("src_lang", "en_XX"),
+            tgt_lang=model_info.get("tgt_lang", "fa_IR"),
+            max_length=512,
+        )
+    else:
+        # MarianMT, mT5, or any generic seq2seq
+        pipe = pipeline("translation", model=model_name, max_length=512)
+
+    _hf_pipeline_cache[model_name] = (pipe, model_info)
+    logger.info("HuggingFace model loaded: %s", model_name)
+    return pipe, model_info
+
+
+def _translate_texts_huggingface(texts: List[str], config: TranslatorConfig) -> List[str]:
+    """Translate texts using a local HuggingFace model."""
+    pipe, model_info = _get_hf_pipeline(config.model)
+    model_type = model_info.get("type", "auto")
+    prefix = model_info.get("prefix", "")
+
+    results: List[str] = []
+    for text in texts:
+        chunks = _chunk_text(text, max_chars=400)  # shorter chunks for local models
+        translated_chunks: List[str] = []
+        for chunk in chunks:
+            input_text = prefix + chunk if prefix else chunk
+            try:
+                out = pipe(input_text)
+                translated = out[0]["translation_text"] if out else chunk
+            except Exception as exc:
+                logger.warning("HuggingFace translation failed for chunk: %s", exc)
+                translated = chunk
+            translated_chunks.append(translated)
+        results.append("\n".join(translated_chunks))
+    return results
+
+
 def translate_texts(texts: Iterable[str], target_lang: str, config: TranslatorConfig) -> List[str]:
     if config.provider == "dummy":
         return list(texts)
+
+    if config.provider == "huggingface":
+        return _translate_texts_huggingface(list(texts), config)
 
     if config.provider not in ("openai", "ollama"):
         raise ValueError(f"Unknown provider: {config.provider}")
@@ -162,6 +255,13 @@ def load_translator_config(
     api_key_override: str | None = None,
     base_url_override: str | None = None,
 ) -> TranslatorConfig:
+    if provider == "huggingface":
+        return TranslatorConfig(
+            provider=provider,
+            api_key=None,
+            base_url=None,
+            model=model_override or "Helsinki-NLP/opus-mt-en-fa",
+        )
     if provider == "ollama":
         return TranslatorConfig(
             provider=provider,

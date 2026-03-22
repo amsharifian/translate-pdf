@@ -17,6 +17,7 @@ import yaml
 
 from translator.font_utils import resolve_font_path
 from translator.config import load_config, get_openai_config, get_local_config
+from translator.translate import HUGGINGFACE_MODELS
 from translator.job_queue import (
     init_db, create_job, list_jobs, update_job_status, update_priority, delete_job,
 )
@@ -228,13 +229,22 @@ def main() -> None:
 
         # ── Settings ────────────────────────────────────────────
         with st.expander("⚙️ Settings", expanded=True):
-            mode = st.radio("Translation mode", ["OpenAI API", "Local (Ollama)"], index=1)
+            mode = st.radio("Translation mode", ["OpenAI API", "Local (Ollama)", "HuggingFace (local)"], index=1)
 
             if mode == "OpenAI API":
                 provider = "openai"
                 model = st.text_input("Model", value=openai_cfg.get("model") or "gpt-4o-mini")
                 api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
                 base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
+            elif mode == "HuggingFace (local)":
+                provider = "huggingface"
+                hf_labels = {v["label"]: k for k, v in HUGGINGFACE_MODELS.items()}
+                hf_choice = st.selectbox("Model", list(hf_labels.keys()))
+                model = hf_labels[hf_choice]
+                api_key = ""
+                base_url = ""
+                st.caption(f"🧠 `{model}` — runs locally, no API key needed")
+                st.info("First run will download the model (~250MB–2.5GB). Requires `transformers` and `torch`.")
             else:
                 provider = "ollama"
                 model = st.text_input("Model", value=local_cfg.get("model") or "qwen3:8b")

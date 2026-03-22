@@ -1,0 +1,13 @@
+prun/
+.git/
+.vscode/
+__pycache__/
+*.egg-info/
+*.pyc
+.DS_Store
+jobs/
+translated/
+Toofan/
+sample_english.pdf
+*.log
+*.log.jsonl

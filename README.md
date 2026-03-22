@@ -4,6 +4,28 @@ A Python toolkit for translating PDFs while preserving the original layout. Supp
 
 ## Quick Setup
 
+### Option 1: Docker (recommended for Windows)
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:8501 in your browser.
+
+To pass API keys via environment variables:
+
+```bash
+# Linux / macOS
+HF_TOKEN=hf_xxx OPENAI_API_KEY=sk-xxx docker compose up --build
+
+# Windows PowerShell
+$env:HF_TOKEN="hf_xxx"; $env:OPENAI_API_KEY="sk-xxx"; docker compose up --build
+```
+
+Jobs, outputs, and downloaded HuggingFace models are persisted across container restarts via Docker volumes.
+
+### Option 2: Local Python
+
 ```bash
 python3 -m venv prun
 source prun/bin/activate
@@ -103,7 +125,12 @@ Requires Python ≤ 3.12 (for PyTorch compatibility).
 | Model | HuggingFace ID | Size | Notes |
 |-------|---------------|------|-------|
 | **NLLB-200 600M** | `facebook/nllb-200-distilled-600M` | ~600MB | Recommended — fast, good quality |
-| **NLLB-200 1.3B** | `facebook/nllb-200-distilled-1.3B` | ~1.3GB | Best quality, larger model |
+| **NLLB-200 1.3B** | `facebook/nllb-200-distilled-1.3B` | ~1.3GB | Best quality distilled |
+| **NLLB-200 3.3B** | `facebook/nllb-200-3.3B` | ~3.3GB | Highest quality, slow |
+| **Opus-MT EN→FA** | `Helsinki-NLP/opus-mt-en-fa` | ~300MB | Lightweight, dedicated en→fa |
+| **Opus-MT Big EN→FA** | `Helsinki-NLP/opus-mt-tc-big-en-fa` | ~500MB | Better quality dedicated en→fa |
+| **M2M-100 418M** | `facebook/m2m100_418M` | ~418MB | Fast multilingual |
+| **M2M-100 1.2B** | `facebook/m2m100_1.2B` | ~1.2GB | Quality multilingual |
 | **mBART-50** | `facebook/mbart-large-50-many-to-many-mmt` | ~2.5GB | Multilingual (50 languages) |
 
 ### CLI Usage

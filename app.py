@@ -159,13 +159,21 @@ def _save_global_glossary(glossary: dict[str, str]) -> None:
 
 def _is_worker_running() -> bool:
     """Check if the worker process is still alive via its PID file."""
-    import os, signal
     if not WORKER_PID_FILE.exists():
         return False
     try:
         pid = int(WORKER_PID_FILE.read_text().strip())
-        os.kill(pid, 0)  # signal 0 = check if alive
-        return True
+        if sys.platform == "win32":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            os.kill(pid, 0)
+            return True
     except (ValueError, OSError):
         WORKER_PID_FILE.unlink(missing_ok=True)
         return False
@@ -177,7 +185,9 @@ def _start_worker() -> bool:
         proc = subprocess.Popen(
             [sys.executable, "scripts/worker.py"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            **({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+               if sys.platform == "win32"
+               else {"start_new_session": True}),
         )
         WORKER_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         WORKER_PID_FILE.write_text(str(proc.pid))
@@ -321,10 +331,14 @@ def main() -> None:
                 use_container_width=True,
             ):
                 if worker_alive and WORKER_PID_FILE.exists():
-                    import signal
                     try:
                         pid = int(WORKER_PID_FILE.read_text().strip())
-                        os.kill(pid, signal.SIGTERM)
+                        if sys.platform == "win32":
+                            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                           capture_output=True, check=False)
+                        else:
+                            import signal
+                            os.kill(pid, signal.SIGTERM)
                     except (ValueError, OSError):
                         pass
                     WORKER_PID_FILE.unlink(missing_ok=True)

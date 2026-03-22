@@ -1,0 +1,19 @@
+services:
+  stormlight:
+    build: .
+    container_name: stormlight-translate
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist jobs, translated outputs, config, and HF model cache
+      - ./jobs:/app/jobs
+      - ./translated:/app/translated
+      - ./config.yml:/app/config.yml
+      - hf-cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    restart: unless-stopped
+
+volumes:
+  hf-cache:

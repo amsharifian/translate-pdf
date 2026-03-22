@@ -30,11 +30,19 @@ def resolve_font_path(font_arg: str) -> Optional[str]:
         except Exception:
             pass
 
-    # Fallback to common font directories (macOS)
+    # Fallback to common font directories
     candidates = [
+        # macOS
         "/System/Library/Fonts",
         "/Library/Fonts",
         os.path.expanduser("~/Library/Fonts"),
+        # Linux
+        "/usr/share/fonts",
+        "/usr/local/share/fonts",
+        os.path.expanduser("~/.local/share/fonts"),
+        # Windows
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts"),
     ]
 
     needle = font_arg.lower()

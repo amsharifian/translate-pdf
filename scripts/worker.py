@@ -128,6 +128,7 @@ def main() -> None:
                     out_path,
                     job["font_path"],
                     lambda texts: translate_texts(texts, target_lang, config),
+                    verbose=True,
                     on_page=on_page,
                     on_pause=on_pause,
                     page_range=page_range_set,

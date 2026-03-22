@@ -265,12 +265,25 @@ def translate_pdf_preserve_layout(
                 rect, shaped, font_name, font_path, 6.0, max_size,
             )
 
-            target_page.insert_textbox(
+            if verbose:
+                logger.info(
+                    "[%s] Page %d block %d: bbox=%s orig_size=%.1f best_size=%.1f text_len=%d",
+                    pdf_path.name, page_index, block_index,
+                    [round(c, 1) for c in rect], font_size, best_size, len(translated_text),
+                )
+
+            rc = target_page.insert_textbox(
                 rect, shaped,
                 fontname=font_name, fontfile=font_path,
                 fontsize=best_size, color=(0, 0, 0),
                 align=fitz.TEXT_ALIGN_RIGHT,
             )
+
+            if verbose:
+                logger.info(
+                    "[%s] Page %d block %d: insert_textbox rc=%.1f (negative=overflow)",
+                    pdf_path.name, page_index, block_index, rc if rc is not None else -999,
+                )
 
         _log_event(log_path, {
             "event": "page_done",

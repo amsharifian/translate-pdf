@@ -51,15 +51,17 @@ def _bisect_font_size(
 ) -> float:
     """Binary-search for the largest font size that fits *rect*.
 
-    Always returns at least *min_size* (caller clips via insert_textbox).
-    Uses temporary scratch pages so no text is written to any real page.
+    Uses a normalized (origin-based) rect on a temporary scratch page
+    so absolute page coordinates don't cause false negatives.
     """
+    # Normalize rect to origin so it always fits on the scratch page
+    norm = fitz.Rect(0, 0, rect.width, rect.height)
 
     def _fits(size: float) -> bool:
         td = fitz.open()
-        tp = td.new_page(width=rect.width + 200, height=rect.height + 200)
+        tp = td.new_page(width=norm.width + 10, height=norm.height + 10)
         rc = tp.insert_textbox(
-            rect, shaped,
+            norm, shaped,
             fontname=font_name, fontfile=font_file,
             fontsize=size, color=(0, 0, 0),
             align=fitz.TEXT_ALIGN_RIGHT,
@@ -67,11 +69,10 @@ def _bisect_font_size(
         td.close()
         return rc is not None and rc >= 0
 
-    # Fast paths
     if max_size <= min_size or _fits(max_size):
         return max_size
     if not _fits(min_size):
-        return min_size          # nothing fits — caller will insert clipped
+        return min_size
 
     lo, hi = min_size, max_size
     while hi - lo > 0.5:
@@ -279,10 +280,27 @@ def translate_pdf_preserve_layout(
                 align=fitz.TEXT_ALIGN_RIGHT,
             )
 
-            if verbose:
+            # If text didn't fit the original rect, expand downward and retry
+            if rc is not None and rc < 0:
+                page_bottom = target_page.rect.y1 - 10
+                expanded = fitz.Rect(rect.x0, rect.y0, rect.x1,
+                                     min(rect.y1 - rc + 4, page_bottom))
+                rc = target_page.insert_textbox(
+                    expanded, shaped,
+                    fontname=font_name, fontfile=font_path,
+                    fontsize=best_size, color=(0, 0, 0),
+                    align=fitz.TEXT_ALIGN_RIGHT,
+                )
+                if verbose:
+                    logger.info(
+                        "[%s] Page %d block %d: expanded rect to height=%.1f rc=%.1f",
+                        pdf_path.name, page_index, block_index,
+                        expanded.height, rc if rc is not None else -999,
+                    )
+            elif verbose:
                 logger.info(
-                    "[%s] Page %d block %d: insert_textbox rc=%.1f (negative=overflow)",
-                    pdf_path.name, page_index, block_index, rc if rc is not None else -999,
+                    "[%s] Page %d block %d: insert_textbox rc=%.1f",
+                    pdf_path.name, page_index, block_index, rc,
                 )
 
         _log_event(log_path, {

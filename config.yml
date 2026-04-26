@@ -1,3 +1,5 @@
+app:
+  last_provider: openai
 font:
   default_path: assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf
 huggingface:
@@ -9,5 +11,5 @@ local:
   model: qwen3:8b
 openai:
   api_key: ''
-  base_url: ''
-  model: Helsinki-NLP/opus-mt-en-fa
+  base_url: https://api.openai.com/v1
+  model: gpt-5

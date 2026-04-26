@@ -339,5 +339,5 @@ def load_translator_config(
         provider=provider,
         api_key=api_key_override or os.getenv("OPENAI_API_KEY"),
         base_url=base_url_override or os.getenv("OPENAI_BASE_URL"),
-        model=model_override or os.getenv("OPENAI_MODEL", "gpt-4.1-nano"),
+        model=model_override or os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
     )

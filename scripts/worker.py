@@ -13,6 +13,7 @@ from translator.job_queue import (
     fetch_next_job,
     update_job_status,
     update_progress,
+    update_status_detail,
     get_job_status,
 )
 from translator.render import translate_pdf_preserve_layout
@@ -56,6 +57,7 @@ def main() -> None:
             if get_job_status(job_id) == "cancelled":
                 continue
             update_job_status(job_id, "running")
+            update_status_detail(job_id, "Starting…")
 
             input_files = [Path(p) for p in json.loads(job["input_files"])]
             output_dir = Path(job["output_dir"])
@@ -84,6 +86,8 @@ def main() -> None:
                     pass
 
             side_by_side = bool(job.get("side_by_side"))
+            ocr_enabled = bool(job.get("ocr_enabled"))
+            ocr_lang = (job.get("ocr_lang") or "eng").strip() or "eng"
 
             font_size_override = job.get("font_size")  # None = auto
             if font_size_override is not None:
@@ -127,6 +131,14 @@ def main() -> None:
                     current_pages += 1
                     update_progress(job_id, current_pages, total_pages)
 
+                def on_phase(cur: int, total: int, phase: str) -> None:
+                    if phase == "ocr":
+                        update_status_detail(job_id, f"OCR page {cur}/{total}")
+                    elif phase == "translating":
+                        update_status_detail(job_id, f"Translating page {cur}/{total}")
+                    else:
+                        update_status_detail(job_id, f"Processing page {cur}/{total}")
+
                 translate_pdf_preserve_layout(
                     in_path,
                     out_path,
@@ -138,6 +150,9 @@ def main() -> None:
                     page_range=page_range_set,
                     side_by_side=side_by_side,
                     font_size_override=font_size_override,
+                    enable_ocr=ocr_enabled,
+                    ocr_lang=ocr_lang,
+                    on_phase=on_phase,
                 )
 
             # Clean up resume logs from output directory
@@ -146,6 +161,7 @@ def main() -> None:
 
             final_status = get_job_status(job_id)
             if final_status != "cancelled":
+                update_status_detail(job_id, None)
                 update_job_status(job_id, "completed")
                 final_status = "completed"
 
@@ -159,11 +175,13 @@ def main() -> None:
                 })
 
         except JobCancelled:
+            update_status_detail(job_id, None)
             update_job_status(job_id, "cancelled")
             webhook_url = job.get("webhook_url")
             if webhook_url:
                 _fire_webhook(webhook_url, {"job_id": job_id, "status": "cancelled"})
         except Exception as exc:
+            update_status_detail(job_id, None)
             update_job_status(job_id, "failed", error=str(exc))
             webhook_url = job.get("webhook_url")
             if webhook_url:

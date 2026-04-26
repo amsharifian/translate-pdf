@@ -49,7 +49,8 @@ SUPPORTED_LANGUAGES = {
     "English": "en",
 }
 
-# Rough cost per 1M tokens (input) for common OpenAI models
+# Rough cost per 1M input tokens for common OpenAI models.
+# Pricing can change; keep this as a best-effort estimate for the UI.
 _TOKEN_PRICING = {
     "gpt-4.1-nano": 0.10,
     "gpt-4.1-mini": 0.40,
@@ -58,7 +59,21 @@ _TOKEN_PRICING = {
     "gpt-4o": 2.50,
     "o4-mini": 1.10,
 }
-_OPENAI_MODELS = list(_TOKEN_PRICING.keys())
+_OPENAI_MODELS = [
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5.1",
+    "gpt-5.1-mini",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "gpt-4.1-nano",
+    "gpt-4o-mini",
+    "gpt-4o",
+    "o4-mini",
+    "o3-mini",
+    "o3",
+]
 _CHARS_PER_TOKEN = 4  # approximate
 
 STATUS_STYLE = {
@@ -203,12 +218,26 @@ def _ensure_worker() -> None:
             st.toast("Worker auto-started!", icon="⚙️")
 
 
-def _save_settings(cfg_path: str, provider: str, model: str, base_url: str, api_key: str) -> None:
+def _save_settings(
+    cfg_path: str,
+    provider: str,
+    model: str,
+    base_url: str,
+    api_key: str,
+    ocr_enabled: bool = False,
+    ocr_lang: str = "eng",
+) -> None:
     """Persist last-used settings back to config.yml."""
     p = Path(cfg_path)
     data = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
     if not isinstance(data, dict):
         data = {}
+    data.setdefault("app", {})
+    data["app"]["last_provider"] = provider
+    data.setdefault("ocr", {})
+    data["ocr"]["enabled"] = bool(ocr_enabled)
+    data["ocr"]["lang"] = (ocr_lang or "eng").strip() or "eng"
+
     if provider == "huggingface":
         data.setdefault("huggingface", {})
         data["huggingface"]["model"] = model
@@ -220,11 +249,15 @@ def _save_settings(cfg_path: str, provider: str, model: str, base_url: str, api_
         data["local"]["base_url"] = base_url
         if api_key and api_key != "ollama":
             data["local"]["api_key"] = api_key
-    else:
+    elif provider == "openai":
         data.setdefault("openai", {})
         data["openai"]["model"] = model
         data["openai"]["base_url"] = base_url
-        # Don't persist the actual API key for security
+        if api_key:
+            data["openai"]["api_key"] = api_key
+    elif provider == "google":
+        data.setdefault("google", {})
+        data["google"]["model"] = "google"
     p.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
 
 
@@ -243,18 +276,33 @@ def main() -> None:
     openai_cfg = get_openai_config(cfg)
     local_cfg = get_local_config(cfg)
     hf_cfg = get_huggingface_config(cfg)
+    last_provider = (cfg.get("app", {}) or {}).get("last_provider", "huggingface")
+    ocr_cfg = cfg.get("ocr", {}) or {}
+    ocr_enabled = bool(ocr_cfg.get("enabled", False))
+    ocr_lang = str(ocr_cfg.get("lang", "eng"))
 
     # ── Sidebar ─────────────────────────────────────────────────
     with st.sidebar:
 
         # ── Settings ────────────────────────────────────────────
         with st.expander("⚙️ Settings", expanded=True):
-            mode = st.radio("Translation mode", ["HuggingFace (local)", "Local (Ollama)", "OpenAI API", "Google Translate"], index=0)
+            mode_options = ["HuggingFace (local)", "Local (Ollama)", "OpenAI API", "Google Translate"]
+            provider_to_mode = {
+                "huggingface": "HuggingFace (local)",
+                "ollama": "Local (Ollama)",
+                "openai": "OpenAI API",
+                "google": "Google Translate",
+            }
+            default_mode = provider_to_mode.get(last_provider, "HuggingFace (local)")
+            mode = st.radio("Translation mode", mode_options, index=mode_options.index(default_mode))
 
             if mode == "HuggingFace (local)":
                 provider = "huggingface"
                 hf_labels = {v["label"]: k for k, v in HUGGINGFACE_MODELS.items()}
-                hf_choice = st.selectbox("Model", list(hf_labels.keys()))
+                label_options = list(hf_labels.keys())
+                saved_hf_model = hf_cfg.get("model")
+                saved_hf_label = next((label for label, mid in hf_labels.items() if mid == saved_hf_model), label_options[0])
+                hf_choice = st.selectbox("Model", label_options, index=label_options.index(saved_hf_label))
                 model = hf_labels[hf_choice]
                 api_key = st.text_input(
                     "HuggingFace Token (for model download)", type="password",
@@ -279,12 +327,49 @@ def main() -> None:
                 base_url = st.text_input("Base URL", value=local_cfg.get("base_url") or "http://localhost:11434/v1")
             elif mode == "OpenAI API":
                 provider = "openai"
-                saved_model = openai_cfg.get("model") or "gpt-4.1-nano"
+                saved_model = openai_cfg.get("model") or "gpt-4.1-mini"
                 idx = _OPENAI_MODELS.index(saved_model) if saved_model in _OPENAI_MODELS else 0
                 model = st.selectbox("Model", _OPENAI_MODELS, index=idx,
-                                     format_func=lambda m: f"{m}  (${_TOKEN_PRICING[m]:.2f}/1M tok)")
-                api_key = st.text_input("OpenAI API Key", type="password", value=openai_cfg.get("api_key") or "")
-                base_url = st.text_input("Base URL", value=openai_cfg.get("base_url") or "https://api.openai.com/v1")
+                                     format_func=lambda m: (
+                                         f"{m}  (${_TOKEN_PRICING[m]:.2f}/1M input tok)"
+                                         if m in _TOKEN_PRICING
+                                         else f"{m}  (pricing varies)"
+                                     ))
+                openai_key_default = openai_cfg.get("api_key") or os.getenv("OPENAI_API_KEY") or ""
+                api_key = st.text_input(
+                    "OpenAI API Key",
+                    type="password",
+                    value=openai_key_default,
+                    help="Read from config.yml or OPENAI_API_KEY environment variable.",
+                )
+                base_url = st.text_input(
+                    "Base URL",
+                    value=openai_cfg.get("base_url") or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1",
+                )
+                if not api_key:
+                    st.warning("Set OpenAI API key in Settings or OPENAI_API_KEY env var.")
+                if st.button("🧪 Test OpenAI connection", key="test-openai", use_container_width=True):
+                    if not api_key:
+                        st.error("OpenAI API key is missing.")
+                    else:
+                        try:
+                            from openai import OpenAI
+
+                            client = OpenAI(api_key=api_key, base_url=base_url or None)
+                            with st.spinner("Testing OpenAI connection..."):
+                                resp = client.responses.create(
+                                    model=model,
+                                    input="Reply with OK.",
+                                    max_output_tokens=32,
+                                    timeout=20,
+                                )
+                            output_text = (getattr(resp, "output_text", "") or "").strip()
+                            if output_text:
+                                st.success(f"OpenAI connection OK. Model response: {output_text[:80]}")
+                            else:
+                                st.success("OpenAI connection OK.")
+                        except Exception as exc:
+                            st.error(f"OpenAI test failed: {exc}")
             else:  # Google Translate
                 provider = "google"
                 model = "google"
@@ -298,7 +383,15 @@ def main() -> None:
                 st.caption(f"Using API key: {masked}")
 
             if st.button("💾 Save Settings", use_container_width=True, help="Persist current model/URL to config.yml"):
-                _save_settings(cfg_path, provider, model, base_url, api_key)
+                _save_settings(
+                    cfg_path,
+                    provider,
+                    model,
+                    base_url,
+                    api_key,
+                    bool(st.session_state.get("ocr_enabled", ocr_enabled)),
+                    str(st.session_state.get("ocr_lang", ocr_lang)),
+                )
                 st.toast("Settings saved to config.yml", icon="💾")
 
         # ── Font ────────────────────────────────────────────────
@@ -539,6 +632,18 @@ def main() -> None:
                 help="Leave blank to translate all pages.",
             )
             side_by_side = st.checkbox("Side-by-side output", help="Interleave original + translated pages in the output PDF.")
+            ocr_enabled = st.checkbox(
+                "Enable OCR for scanned PDFs",
+                value=ocr_enabled,
+                key="ocr_enabled",
+                help="Use OCR when no extractable text is found (requires Tesseract).",
+            )
+            ocr_lang = st.text_input(
+                "OCR language(s)",
+                value=ocr_lang,
+                key="ocr_lang",
+                help="Tesseract language codes, e.g. eng, fas, or eng+fas.",
+            )
         with col_b:
             glossary_text = st.text_area(
                 "Job glossary overrides (one per line: term=translation)",
@@ -586,7 +691,12 @@ def main() -> None:
                 tmp.close()
                 tmp_path = Path(tmp.name)
                 try:
-                    blocks_by_page = extract_page_text_blocks(tmp_path, range(1, 4))
+                    blocks_by_page = extract_page_text_blocks(
+                        tmp_path,
+                        range(1, 4),
+                        enable_ocr=ocr_enabled,
+                        ocr_lang=ocr_lang,
+                    )
                     for pg, blocks in blocks_by_page.items():
                         st.caption(f"Page {pg} — {len(blocks)} text block(s)")
                         for b in blocks[:5]:
@@ -608,7 +718,11 @@ def main() -> None:
                 tmp.close()
                 tmp_path = Path(tmp.name)
                 try:
-                    all_blocks = extract_page_text_blocks(tmp_path)
+                    all_blocks = extract_page_text_blocks(
+                        tmp_path,
+                        enable_ocr=ocr_enabled,
+                        ocr_lang=ocr_lang,
+                    )
                     for blocks in all_blocks.values():
                         total_chars += sum(len(b["text"]) for b in blocks)
                 except Exception:
@@ -663,6 +777,26 @@ def main() -> None:
             target.write_bytes(f.getbuffer())
             input_paths.append(str(target))
 
+        # Validate PDFs contain extractable text; scanned/image-only PDFs need OCR first.
+        total_blocks = 0
+        for p in input_paths:
+            try:
+                page_blocks = extract_page_text_blocks(
+                    Path(p),
+                    enable_ocr=ocr_enabled,
+                    ocr_lang=ocr_lang,
+                )
+                total_blocks += sum(len(blocks) for blocks in page_blocks.values())
+            except Exception:
+                # Keep submit flow resilient; worker will still report errors if file is invalid.
+                pass
+        if total_blocks == 0 and not ocr_enabled:
+            st.error(
+                "No extractable text found in the uploaded PDF(s). "
+                "These files look like scanned/images. Enable OCR in Advanced options or run OCR first."
+            )
+            return
+
         file_names = ", ".join(f.name for f in uploaded)
         auto_name = job_name.strip() if job_name.strip() else f"{len(uploaded)} file(s) — {file_names[:60]}"
 
@@ -688,6 +822,8 @@ def main() -> None:
             "webhook_url": webhook_url.strip() or None,
             "custom_prompt": custom_prompt.strip(),
             "font_size": font_size_override,
+            "ocr_enabled": bool(ocr_enabled),
+            "ocr_lang": (ocr_lang or "eng").strip() or "eng",
         }
         create_job(job)
         _ensure_worker()
@@ -747,6 +883,8 @@ def _render_job_queue() -> None:
                 f"**Model:** {job.get('model', '–')}",
                 f"**Lang:** {job.get('target_lang', 'fa')}",
             ]
+            if bool(job.get("ocr_enabled")):
+                meta_parts.append(f"**OCR:** ✅ {job.get('ocr_lang') or 'eng'}")
             if priority != 0:
                 meta_parts.append(f"**Priority:** {priority}")
             if created:
@@ -756,12 +894,17 @@ def _render_job_queue() -> None:
             # ── Progress bar ──
             total = job.get("progress_total") or 0
             current = job.get("progress_current") or 0
+            status_detail = (job.get("status_detail") or "").strip()
             if total > 0:
                 st.progress(min(current / total, 1.0))
                 st.caption(f"Page {current} of {total}")
+                if status_detail:
+                    st.caption(status_detail)
             elif status == "running":
                 st.progress(0.0)
                 st.caption("Starting… waiting for page count")
+                if status_detail:
+                    st.caption(status_detail)
             elif status == "queued":
                 st.progress(0.0)
                 st.caption("Waiting in queue…")

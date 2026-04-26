@@ -106,8 +106,32 @@ def _log_event(log_path: Path, event: dict) -> None:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
+def _extract_blocks_from_page(
+    page: fitz.Page,
+    enable_ocr: bool = False,
+    ocr_lang: str = "eng",
+) -> List[dict]:
+    """Extract text blocks from a page, with optional OCR fallback."""
+    page_dict = page.get_text("dict")
+    blocks = [b for b in page_dict.get("blocks", []) if b.get("type") == 0]
+
+    # If no embedded text is present, optionally run OCR (requires Tesseract).
+    if not blocks and enable_ocr:
+        try:
+            textpage = page.get_textpage_ocr(language=ocr_lang, dpi=300, full=True)
+            ocr_dict = textpage.extractDICT()
+            blocks = [b for b in ocr_dict.get("blocks", []) if b.get("type") == 0]
+        except Exception as exc:
+            logger.warning("OCR failed on page %d (%s): %s", page.number + 1, ocr_lang, exc)
+
+    return blocks
+
+
 def extract_page_text_blocks(
-    pdf_path: Path, page_indices: Optional[Iterable[int]] = None,
+    pdf_path: Path,
+    page_indices: Optional[Iterable[int]] = None,
+    enable_ocr: bool = False,
+    ocr_lang: str = "eng",
 ) -> dict[int, List[dict]]:
     """Extract text blocks per page. Returns {1-based page: [block_info, ...]}."""
     doc = fitz.open(str(pdf_path))
@@ -117,8 +141,7 @@ def extract_page_text_blocks(
         if page_index < 1 or page_index > len(doc):
             continue
         page = doc[page_index - 1]
-        page_dict = page.get_text("dict")
-        blocks = [b for b in page_dict.get("blocks", []) if b.get("type") == 0]
+        blocks = _extract_blocks_from_page(page, enable_ocr=enable_ocr, ocr_lang=ocr_lang)
         block_infos: List[dict] = []
         for block in blocks:
             text, avg_size = _block_text_and_size(block)
@@ -147,6 +170,9 @@ def translate_pdf_preserve_layout(
     side_by_side: bool = False,
     log_path: Optional[Path] = None,
     font_size_override: Optional[float] = None,
+    enable_ocr: bool = False,
+    ocr_lang: str = "eng",
+    on_phase: Callable[[int, int, str], None] | None = None,
 ) -> None:
     if not font_path:
         raise ValueError("A TTF font path is required to render Farsi text.")
@@ -193,8 +219,9 @@ def translate_pdf_preserve_layout(
         if on_pause:
             on_pause()
 
-        page_dict = page.get_text("dict")
-        blocks = [b for b in page_dict.get("blocks", []) if b.get("type") == 0]
+        if on_phase:
+            on_phase(page_index, total_pages, "ocr" if enable_ocr else "extracting")
+        blocks = _extract_blocks_from_page(page, enable_ocr=enable_ocr, ocr_lang=ocr_lang)
 
         texts: List[str] = []
         font_sizes: List[float] = []
@@ -227,6 +254,8 @@ def translate_pdf_preserve_layout(
         if verbose:
             logger.info("[%s] Page %d: translating %d blocks", pdf_path.name, page_index, len(texts))
 
+        if on_phase:
+            on_phase(page_index, total_pages, "translating")
         translated = translate_fn(texts)
 
         # Log per-block for the job logs viewer

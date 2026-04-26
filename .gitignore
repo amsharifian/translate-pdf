@@ -34,6 +34,8 @@ jobs/.worker.pid
 jobs/.notifications.json
 jobs/*/uploads/
 jobs/*/outputs/
+jobs/outputs/
+jobs/worker.out.log
 *.log.jsonl
 
 # Secrets — don't ignore config.yml (has no keys by default)

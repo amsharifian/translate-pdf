@@ -41,7 +41,7 @@ This project uses the OpenAI API by default.
 ```bash
 export OPENAI_API_KEY="your-openai-api-key"
 # Optional:
-export OPENAI_MODEL="gpt-4o-mini"
+export OPENAI_MODEL="gpt-4.1-mini"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
@@ -50,7 +50,7 @@ Or pass them directly:
 ```bash
 translate-pdf -i "./docs/*.pdf" \
   --openai-api-key "your-key" \
-  --openai-model "gpt-4o-mini" \
+  --openai-model "gpt-4.1-mini" \
   --font "assets/fonts/Vazirmatn/fonts/ttf/Vazirmatn-Regular.ttf"
 ```
 
@@ -63,7 +63,7 @@ Example `config.yml`:
 ```yaml
 openai:
   api_key: "your-openai-api-key"
-  model: "gpt-4o-mini"
+  model: "gpt-4.1-mini"
   base_url: "https://api.openai.com/v1"
 local:
   model: "qwen3:8b"

@@ -61,6 +61,9 @@ def init_db() -> None:
             "job_log TEXT",
             "custom_prompt TEXT DEFAULT ''",
             "font_size REAL",
+            "ocr_enabled INTEGER DEFAULT 0",
+            "ocr_lang TEXT DEFAULT 'eng'",
+            "status_detail TEXT",
         ]:
             try:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_def}")
@@ -79,8 +82,8 @@ def create_job(job: Dict[str, Any]) -> None:
                 input_files, output_dir, created_at, updated_at,
                 progress_current, progress_total, error,
                 target_lang, glossary, page_range, side_by_side, webhook_url, custom_prompt,
-                font_size
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                font_size, ocr_enabled, ocr_lang
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job["id"],
@@ -106,6 +109,8 @@ def create_job(job: Dict[str, Any]) -> None:
                 job.get("webhook_url"),
                 job.get("custom_prompt") or "",
                 job.get("font_size"),
+                1 if job.get("ocr_enabled") else 0,
+                job.get("ocr_lang") or "eng",
             ),
         )
     conn.close()
@@ -181,5 +186,15 @@ def update_progress(job_id: str, current: int, total: int) -> None:
             WHERE id = ?
             """,
             (current, total, job_id),
+        )
+    conn.close()
+
+
+def update_status_detail(job_id: str, detail: str | None) -> None:
+    conn = _connect()
+    with conn:
+        conn.execute(
+            "UPDATE jobs SET status_detail = ?, updated_at = datetime('now') WHERE id = ?",
+            (detail, job_id),
         )
     conn.close()
